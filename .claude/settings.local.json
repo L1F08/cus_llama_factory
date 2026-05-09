@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk -F'.' '{print $4}')",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('infer_cls_head.py'\\).read\\(\\)\\); print\\('  OK  infer_cls_head.py'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('/Users/yifanlau/Desktop/HKU/huawei/infer_cls_head.py'\\).read\\(\\)\\); print\\('  OK  infer_cls_head.py'\\)\")"
+    ]
+  }
+}

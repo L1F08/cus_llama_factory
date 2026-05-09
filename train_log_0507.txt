@@ -1,0 +1,774 @@
+{\rtf1\ansi\ansicpg936\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 HelveticaNeue;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs32 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 (lyf_train) [ma-user lyf]$sh run_qwen35_test.sh \
+W0507 11:29:13.520000 2572487 site-packages/torch/distributed/run.py:766] \uc0\u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 \u9608 | 500/500 [47:47<00:00,  5.67s/it]\
+W0507 11:29:13.520000 2572487 site-packages/torch/distributed/run.py:766] *****************************************\
+W0507 11:29:13.520000 2572487 site-packages/torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. \
+W0507 11:29:13.520000 2572487 site-packages/torch/distributed/run.py:766] *****************************************\
+[WARNING|2026-05-07 11:29:41] llamafactory.extras.misc:155 >> Version checking has been disabled, may lead to unexpected behaviors.\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+[INFO|2026-05-07 11:29:42] llamafactory.hparams.parser:144 >> Set `ddp_find_unused_parameters` to False in DDP training since LoRA is enabled.\
+[INFO|2026-05-07 11:29:42] llamafactory.hparams.parser:505 >> Process rank: 0, world size: 8, device: npu:0, distributed training: True, compute dtype: torch.bfloat16\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+[INFO|configuration_utils.py:766] 2026-05-07 11:29:42,862 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/config.json\
+[INFO|configuration_utils.py:844] 2026-05-07 11:29:42,894 >> Model config Qwen3_5Config \{\
+  "architectures": [\
+    "Qwen3_5ForConditionalGeneration"\
+  ],\
+  "image_token_id": 248056,\
+  "model_type": "qwen3_5",\
+  "text_config": \{\
+    "attention_bias": false,\
+    "attention_dropout": 0.0,\
+    "attn_output_gate": true,\
+    "bos_token_id": null,\
+    "dtype": "bfloat16",\
+    "eos_token_id": 248044,\
+    "full_attention_interval": 4,\
+    "head_dim": 256,\
+    "hidden_act": "silu",\
+    "hidden_size": 4096,\
+    "initializer_range": 0.02,\
+    "intermediate_size": 12288,\
+    "layer_types": [\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention"\
+    ],\
+    "linear_conv_kernel_dim": 4,\
+    "linear_key_head_dim": 128,\
+    "linear_num_key_heads": 16,\
+    "linear_num_value_heads": 32,\
+    "linear_value_head_dim": 128,\
+    "mamba_ssm_dtype": "float32",\
+    "max_position_embeddings": 262144,\
+    "mlp_only_layers": [],\
+    "model_type": "qwen3_5_text",\
+    "mtp_num_hidden_layers": 1,\
+    "mtp_use_dedicated_embeddings": false,\
+    "num_attention_heads": 16,\
+    "num_hidden_layers": 32,\
+    "num_key_value_heads": 4,\
+    "pad_token_id": null,\
+    "partial_rotary_factor": 0.25,\
+    "rms_norm_eps": 1e-06,\
+    "rope_parameters": \{\
+      "mrope_interleaved": true,\
+      "mrope_section": [\
+        11,\
+        11,\
+        10\
+      ],\
+      "partial_rotary_factor": 0.25,\
+      "rope_theta": 10000000,\
+      "rope_type": "default"\
+    \},\
+    "tie_word_embeddings": false,\
+    "use_cache": true,\
+    "vocab_size": 248320\
+  \},\
+  "tie_word_embeddings": false,\
+  "transformers_version": "5.5.3",\
+  "video_token_id": 248057,\
+  "vision_config": \{\
+    "deepstack_visual_indexes": [],\
+    "depth": 27,\
+    "hidden_act": "gelu_pytorch_tanh",\
+    "hidden_size": 1152,\
+    "in_channels": 3,\
+    "initializer_range": 0.02,\
+    "intermediate_size": 4304,\
+    "model_type": "qwen3_5",\
+    "num_heads": 16,\
+    "num_position_embeddings": 2304,\
+    "out_hidden_size": 4096,\
+    "patch_size": 16,\
+    "spatial_merge_size": 2,\
+    "temporal_patch_size": 2\
+  \},\
+  "vision_end_token_id": 248054,\
+  "vision_start_token_id": 248053\
+\}\
+\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+[INFO|2026-05-07 11:29:43] llamafactory.hparams.parser:505 >> Process rank: 2, world size: 8, device: npu:2, distributed training: True, compute dtype: torch.bfloat16\
+[INFO|2026-05-07 11:29:43] llamafactory.hparams.parser:505 >> Process rank: 4, world size: 8, device: npu:4, distributed training: True, compute dtype: torch.bfloat16\
+[INFO|2026-05-07 11:29:43] llamafactory.hparams.parser:505 >> Process rank: 5, world size: 8, device: npu:5, distributed training: True, compute dtype: torch.bfloat16\
+[INFO|2026-05-07 11:29:43] llamafactory.hparams.parser:505 >> Process rank: 1, world size: 8, device: npu:1, distributed training: True, compute dtype: torch.bfloat16\
+[INFO|2026-05-07 11:29:43] llamafactory.hparams.parser:505 >> Process rank: 6, world size: 8, device: npu:6, distributed training: True, compute dtype: torch.bfloat16\
+[INFO|2026-05-07 11:29:43] llamafactory.hparams.parser:505 >> Process rank: 7, world size: 8, device: npu:7, distributed training: True, compute dtype: torch.bfloat16\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/jieba/_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\
+  import pkg_resources\
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.\
+`logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.\
+[INFO|2026-05-07 11:29:45] llamafactory.hparams.parser:505 >> Process rank: 3, world size: 8, device: npu:3, distributed training: True, compute dtype: torch.bfloat16\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+[INFO|image_processing_base.py:342] 2026-05-07 11:29:45,723 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/preprocessor_config.json\
+[INFO|processing_utils.py:1114] 2026-05-07 11:29:45,734 >> loading configuration file None\
+[INFO|image_processing_base.py:342] 2026-05-07 11:29:45,736 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/preprocessor_config.json\
+[WARNING|logging.py:333] 2026-05-07 11:29:45,736 >> The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+[INFO|image_processing_base.py:342] 2026-05-07 11:29:45,766 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/preprocessor_config.json\
+[INFO|image_processing_base.py:385] 2026-05-07 11:29:45,767 >> Image processor Qwen2VLImageProcessor \{\
+  "do_convert_rgb": true,\
+  "do_normalize": true,\
+  "do_rescale": true,\
+  "do_resize": true,\
+  "image_mean": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "image_processor_type": "Qwen2VLImageProcessor",\
+  "image_std": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "merge_size": 2,\
+  "patch_size": 16,\
+  "resample": 3,\
+  "rescale_factor": 0.00392156862745098,\
+  "size": \{\
+    "longest_edge": 16777216,\
+    "shortest_edge": 65536\
+  \},\
+  "temporal_patch_size": 2\
+\}\
+\
+[INFO|configuration_utils.py:766] 2026-05-07 11:29:45,768 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/config.json\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+[INFO|configuration_utils.py:844] 2026-05-07 11:29:45,787 >> Model config Qwen3_5Config \{\
+  "architectures": [\
+    "Qwen3_5ForConditionalGeneration"\
+  ],\
+  "image_token_id": 248056,\
+  "model_type": "qwen3_5",\
+  "text_config": \{\
+    "attention_bias": false,\
+    "attention_dropout": 0.0,\
+    "attn_output_gate": true,\
+    "bos_token_id": null,\
+    "dtype": "bfloat16",\
+    "eos_token_id": 248044,\
+    "full_attention_interval": 4,\
+    "head_dim": 256,\
+    "hidden_act": "silu",\
+    "hidden_size": 4096,\
+    "initializer_range": 0.02,\
+    "intermediate_size": 12288,\
+    "layer_types": [\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention"\
+    ],\
+    "linear_conv_kernel_dim": 4,\
+    "linear_key_head_dim": 128,\
+    "linear_num_key_heads": 16,\
+    "linear_num_value_heads": 32,\
+    "linear_value_head_dim": 128,\
+    "mamba_ssm_dtype": "float32",\
+    "max_position_embeddings": 262144,\
+    "mlp_only_layers": [],\
+    "model_type": "qwen3_5_text",\
+    "mtp_num_hidden_layers": 1,\
+    "mtp_use_dedicated_embeddings": false,\
+    "num_attention_heads": 16,\
+    "num_hidden_layers": 32,\
+    "num_key_value_heads": 4,\
+    "pad_token_id": null,\
+    "partial_rotary_factor": 0.25,\
+    "rms_norm_eps": 1e-06,\
+    "rope_parameters": \{\
+      "mrope_interleaved": true,\
+      "mrope_section": [\
+        11,\
+        11,\
+        10\
+      ],\
+      "partial_rotary_factor": 0.25,\
+      "rope_theta": 10000000,\
+      "rope_type": "default"\
+    \},\
+    "tie_word_embeddings": false,\
+    "use_cache": true,\
+    "vocab_size": 248320\
+  \},\
+  "tie_word_embeddings": false,\
+  "transformers_version": "5.5.3",\
+  "video_token_id": 248057,\
+  "vision_config": \{\
+    "deepstack_visual_indexes": [],\
+    "depth": 27,\
+    "hidden_act": "gelu_pytorch_tanh",\
+    "hidden_size": 1152,\
+    "in_channels": 3,\
+    "initializer_range": 0.02,\
+    "intermediate_size": 4304,\
+    "model_type": "qwen3_5",\
+    "num_heads": 16,\
+    "num_position_embeddings": 2304,\
+    "out_hidden_size": 4096,\
+    "patch_size": 16,\
+    "spatial_merge_size": 2,\
+    "temporal_patch_size": 2\
+  \},\
+  "vision_end_token_id": 248054,\
+  "vision_start_token_id": 248053\
+\}\
+\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+[INFO|video_processing_utils.py:684] 2026-05-07 11:29:48,554 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/video_preprocessor_config.json\
+[INFO|video_processing_utils.py:684] 2026-05-07 11:29:48,571 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/video_preprocessor_config.json\
+[INFO|video_processing_utils.py:727] 2026-05-07 11:29:48,571 >> Video processor Qwen3VLVideoProcessor \{\
+  "do_convert_rgb": true,\
+  "do_normalize": true,\
+  "do_rescale": true,\
+  "do_resize": true,\
+  "do_sample_frames": true,\
+  "fps": 2,\
+  "image_mean": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "image_std": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "max_frames": 768,\
+  "merge_size": 2,\
+  "min_frames": 4,\
+  "patch_size": 16,\
+  "resample": 3,\
+  "rescale_factor": 0.00392156862745098,\
+  "return_metadata": false,\
+  "size": \{\
+    "longest_edge": 25165824,\
+    "shortest_edge": 4096\
+  \},\
+  "temporal_patch_size": 2,\
+  "video_processor_type": "Qwen3VLVideoProcessor"\
+\}\
+\
+[INFO|processing_utils.py:1191] 2026-05-07 11:29:48,574 >> Processor Qwen3VLProcessor:\
+- image_processor: Qwen2VLImageProcessor \{\
+  "do_convert_rgb": true,\
+  "do_normalize": true,\
+  "do_rescale": true,\
+  "do_resize": true,\
+  "image_mean": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "image_processor_type": "Qwen2VLImageProcessor",\
+  "image_std": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "merge_size": 2,\
+  "patch_size": 16,\
+  "resample": 3,\
+  "rescale_factor": 0.00392156862745098,\
+  "size": \{\
+    "longest_edge": 16777216,\
+    "shortest_edge": 65536\
+  \},\
+  "temporal_patch_size": 2\
+\}\
+\
+- tokenizer: TokenizersBackend(name_or_path='/home/ma-user/work/lyf/model/Qwen3_5-9B', vocab_size=248044, model_max_length=262144, padding_side='right', truncation_side='right', special_tokens=\{'eos_token': '<|im_end|>', 'pad_token': '<|endoftext|>', 'audio_bos_token': '<|audio_start|>', 'audio_eos_token': '<|audio_end|>', 'audio_token': '<|audio_pad|>', 'image_token': '<|image_pad|>', 'video_token': '<|video_pad|>', 'vision_bos_token': '<|vision_start|>', 'vision_eos_token': '<|vision_end|>'\}, added_tokens_decoder=\{\
+        248044: AddedToken("<|endoftext|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248045: AddedToken("<|im_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248046: AddedToken("<|im_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248047: AddedToken("<|object_ref_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248048: AddedToken("<|object_ref_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248049: AddedToken("<|box_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248050: AddedToken("<|box_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248051: AddedToken("<|quad_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248052: AddedToken("<|quad_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248053: AddedToken("<|vision_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248054: AddedToken("<|vision_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248055: AddedToken("<|vision_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248056: AddedToken("<|image_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248057: AddedToken("<|video_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248058: AddedToken("<tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248059: AddedToken("</tool_call>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248060: AddedToken("<|fim_prefix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248061: AddedToken("<|fim_middle|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248062: AddedToken("<|fim_suffix|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248063: AddedToken("<|fim_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248064: AddedToken("<|repo_name|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248065: AddedToken("<|file_sep|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248066: AddedToken("<tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248067: AddedToken("</tool_response>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248068: AddedToken("<think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248069: AddedToken("</think>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=False),\
+        248070: AddedToken("<|audio_start|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248071: AddedToken("<|audio_end|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248072: AddedToken("<tts_pad>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248073: AddedToken("<tts_text_bos>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248074: AddedToken("<tts_text_eod>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248075: AddedToken("<tts_text_bos_single>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+        248076: AddedToken("<|audio_pad|>", rstrip=False, lstrip=False, single_word=False, normalized=False, special=True),\
+\})\
+- video_processor: Qwen3VLVideoProcessor \{\
+  "do_convert_rgb": true,\
+  "do_normalize": true,\
+  "do_rescale": true,\
+  "do_resize": true,\
+  "do_sample_frames": true,\
+  "fps": 2,\
+  "image_mean": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "image_std": [\
+    0.5,\
+    0.5,\
+    0.5\
+  ],\
+  "max_frames": 768,\
+  "merge_size": 2,\
+  "min_frames": 4,\
+  "patch_size": 16,\
+  "resample": 3,\
+  "rescale_factor": 0.00392156862745098,\
+  "return_metadata": false,\
+  "size": \{\
+    "longest_edge": 25165824,\
+    "shortest_edge": 4096\
+  \},\
+  "temporal_patch_size": 2,\
+  "video_processor_type": "Qwen3VLVideoProcessor"\
+\}\
+\
+\
+\{\
+  "image_processor": \{\
+    "do_convert_rgb": true,\
+    "do_normalize": true,\
+    "do_rescale": true,\
+    "do_resize": true,\
+    "image_mean": [\
+      0.5,\
+      0.5,\
+      0.5\
+    ],\
+    "image_processor_type": "Qwen2VLImageProcessor",\
+    "image_std": [\
+      0.5,\
+      0.5,\
+      0.5\
+    ],\
+    "merge_size": 2,\
+    "patch_size": 16,\
+    "resample": 3,\
+    "rescale_factor": 0.00392156862745098,\
+    "size": \{\
+      "longest_edge": 16777216,\
+      "shortest_edge": 65536\
+    \},\
+    "temporal_patch_size": 2\
+  \},\
+  "processor_class": "Qwen3VLProcessor",\
+  "video_processor": \{\
+    "do_convert_rgb": true,\
+    "do_normalize": true,\
+    "do_rescale": true,\
+    "do_resize": true,\
+    "do_sample_frames": true,\
+    "fps": 2,\
+    "image_mean": [\
+      0.5,\
+      0.5,\
+      0.5\
+    ],\
+    "image_std": [\
+      0.5,\
+      0.5,\
+      0.5\
+    ],\
+    "max_frames": 768,\
+    "merge_size": 2,\
+    "min_frames": 4,\
+    "patch_size": 16,\
+    "resample": 3,\
+    "rescale_factor": 0.00392156862745098,\
+    "return_metadata": false,\
+    "size": \{\
+      "longest_edge": 25165824,\
+      "shortest_edge": 4096\
+    \},\
+    "temporal_patch_size": 2,\
+    "video_processor_type": "Qwen3VLVideoProcessor"\
+  \}\
+\}\
+\
+[INFO|2026-05-07 11:29:48] llamafactory.data.loader:144 >> Loading dataset train_dataset_crash_0430_ofi.json...\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+num_proc must be <= 100. Reducing num_proc to 100 for dataset of size 100.\
+Converting format of dataset (num_proc=100): 200 examples [00:05, 18.21 examples/s]                                                                                                                       \
+/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py:4631: UserWarning: No device id is provided via `init_process_group` or `barrier `. Using the current device set by the user. \
+  warnings.warn(  # warn only once\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+\
+[INFO|configuration_utils.py:766] 2026-05-07 11:31:32,080 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/config.json\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+[INFO|configuration_utils.py:844] 2026-05-07 11:31:32,100 >> Model config Qwen3_5Config \{\
+  "architectures": [\
+    "Qwen3_5ForConditionalGeneration"\
+  ],\
+  "image_token_id": 248056,\
+  "model_type": "qwen3_5",\
+  "text_config": \{\
+    "attention_bias": false,\
+    "attention_dropout": 0.0,\
+    "attn_output_gate": true,\
+    "bos_token_id": null,\
+    "dtype": "bfloat16",\
+    "eos_token_id": 248044,\
+    "full_attention_interval": 4,\
+    "head_dim": 256,\
+    "hidden_act": "silu",\
+    "hidden_size": 4096,\
+    "initializer_range": 0.02,\
+    "intermediate_size": 12288,\
+    "layer_types": [\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "linear_attention",\
+      "full_attention"\
+    ],\
+    "linear_conv_kernel_dim": 4,\
+    "linear_key_head_dim": 128,\
+    "linear_num_key_heads": 16,\
+    "linear_num_value_heads": 32,\
+    "linear_value_head_dim": 128,\
+    "mamba_ssm_dtype": "float32",\
+    "max_position_embeddings": 262144,\
+    "mlp_only_layers": [],\
+    "model_type": "qwen3_5_text",\
+    "mtp_num_hidden_layers": 1,\
+    "mtp_use_dedicated_embeddings": false,\
+    "num_attention_heads": 16,\
+    "num_hidden_layers": 32,\
+    "num_key_value_heads": 4,\
+    "pad_token_id": null,\
+    "partial_rotary_factor": 0.25,\
+    "rms_norm_eps": 1e-06,\
+    "rope_parameters": \{\
+      "mrope_interleaved": true,\
+      "mrope_section": [\
+        11,\
+        11,\
+        10\
+      ],\
+      "partial_rotary_factor": 0.25,\
+      "rope_theta": 10000000,\
+      "rope_type": "default"\
+    \},\
+    "tie_word_embeddings": false,\
+    "use_cache": true,\
+    "vocab_size": 248320\
+  \},\
+  "tie_word_embeddings": false,\
+  "transformers_version": "5.5.3",\
+  "video_token_id": 248057,\
+  "vision_config": \{\
+    "deepstack_visual_indexes": [],\
+    "depth": 27,\
+    "hidden_act": "gelu_pytorch_tanh",\
+    "hidden_size": 1152,\
+    "in_channels": 3,\
+    "initializer_range": 0.02,\
+    "intermediate_size": 4304,\
+    "model_type": "qwen3_5",\
+    "num_heads": 16,\
+    "num_position_embeddings": 2304,\
+    "out_hidden_size": 4096,\
+    "patch_size": 16,\
+    "spatial_merge_size": 2,\
+    "temporal_patch_size": 2\
+  \},\
+  "vision_end_token_id": 248054,\
+  "vision_start_token_id": 248053\
+\}\
+\
+[INFO|2026-05-07 11:31:32] llamafactory.model.model_utils.kv_cache:144 >> KV cache is disabled during training.\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+num_proc must be <= 95. Reducing num_proc to 95 for dataset of size 95.\
+[INFO|modeling_utils.py:706] 2026-05-07 11:31:32,728 >> loading weights file /home/ma-user/work/lyf/model/Qwen3_5-9B/model.safetensors.index.json\
+[INFO|modeling_utils.py:790] 2026-05-07 11:31:32,742 >> Since the `dtype` attribute can't be found in model's config object, will use dtype=\{dtype\} as derived from model's weights\
+[INFO|modeling_utils.py:1594] 2026-05-07 11:31:32,746 >> Detect using FlashAttention2 on Ascend NPU.\
+[INFO|configuration_utils.py:1027] 2026-05-07 11:31:32,749 >> Generate config GenerationConfig \{\
+  "output_attentions": false,\
+  "output_hidden_states": false,\
+  "use_cache": false\
+\}\
+\
+[INFO|modeling_utils.py:1594] 2026-05-07 11:31:32,751 >> Detect using FlashAttention2 on Ascend NPU.\
+[INFO|modeling_utils.py:1594] 2026-05-07 11:31:32,751 >> Detect using FlashAttention2 on Ascend NPU.\
+[INFO|modeling_utils.py:1594] 2026-05-07 11:31:33,407 >> Detect using FlashAttention2 on Ascend NPU.\
+[WARNING|logging.py:333] 2026-05-07 11:31:33,411 >> The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+Loading weights:   0%|                                                                                                                                                            | 0/760 [00:00<?, ?it/s]num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+num_proc must be <= 5. Reducing num_proc to 5 for dataset of size 5.\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\
+\
+[INFO|utils.py:411] 2026-05-07 11:32:06,889 >> Generation config file not found, using a generation config created from the model config.\
+[INFO|configuration_utils.py:978] 2026-05-07 11:32:06,891 >> loading configuration file /home/ma-user/work/lyf/model/Qwen3_5-9B/config.json\
+[INFO|configuration_utils.py:1027] 2026-05-07 11:32:06,892 >> Generate config GenerationConfig \{\}\
+\
+[INFO|dynamic_module_utils.py:406] 2026-05-07 11:32:06,892 >> Could not locate the custom_generate/generate.py inside /home/ma-user/work/lyf/model/Qwen3_5-9B.\
+[INFO|2026-05-07 11:32:06] llamafactory.model.model_utils.checkpointing:144 >> Gradient checkpointing enabled.\
+[INFO|2026-05-07 11:32:06] llamafactory.model.model_utils.attention:144 >> Using FlashAttention-2 for faster training and inference.\
+[INFO|2026-05-07 11:32:06] llamafactory.model.adapter:144 >> Upcasting trainable params to float32.\
+[INFO|2026-05-07 11:32:06] llamafactory.model.adapter:144 >> Fine-tuning method: LoRA\
+[INFO|2026-05-07 11:32:06] llamafactory.model.model_utils.misc:144 >> Found linear modules: in_proj_z,in_proj_a,o_proj,down_proj,q_proj,k_proj,out_proj,in_proj_qkv,gate_proj,v_proj,up_proj,in_proj_b\
+[INFO|2026-05-07 11:32:06] llamafactory.model.model_utils.visual:144 >> Set vision model not trainable: ['visual.pos_embed', 'visual.patch_embed', 'visual.blocks'].\
+[INFO|2026-05-07 11:32:06] llamafactory.model.model_utils.visual:144 >> Set multi model projector not trainable: model.visual.merger.\
+[INFO|2026-05-07 11:32:12] llamafactory.model.loader:144 >> trainable params: 274,190,400 || all params: 9,684,004,144 || trainable%: 2.8314\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+[WARNING|trainer_utils.py:1238] 2026-05-07 11:32:14,823 >> The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: \{'eos_token_id': 248046, 'pad_token_id': 248044\}.\
+[INFO|trainer.py:1466] 2026-05-07 11:32:17,799 >> ***** Running training *****\
+[INFO|trainer.py:1467] 2026-05-07 11:32:17,799 >>   Num examples = 95\
+[INFO|trainer.py:1468] 2026-05-07 11:32:17,799 >>   Num Epochs = 5\
+[INFO|trainer.py:1469] 2026-05-07 11:32:17,799 >>   Num update steps per epoch = 6\
+[INFO|trainer.py:1470] 2026-05-07 11:32:17,799 >>   Instantaneous batch size per device = 1\
+[INFO|trainer.py:1473] 2026-05-07 11:32:17,799 >>   Total train batch size (w. parallel, distributed & accumulation) = 16\
+[INFO|trainer.py:1474] 2026-05-07 11:32:17,799 >>   Gradient Accumulation steps = 2\
+[INFO|trainer.py:1475] 2026-05-07 11:32:17,799 >>   Total optimization steps = 30\
+[INFO|trainer.py:1476] 2026-05-07 11:32:17,810 >>   Number of trainable parameters = 274,190,400\
+  0%|                                                                                                                                                                              | 0/30 [00:00<?, ?it/s]\
+\
+\
+\
+[rank0]:[E507 11:34:07.229807896 compiler_depend.ts:444] operator():build/CMakeFiles/torch_npu.dir/compiler_depend.ts:86 NPU function error: call aclnnForeachNorm failed, error code is 207001\
+[ERROR] 2026-05-07-11:34:07 (PID:2572605, Device:0, RankID:0) ERR00100 PTA call acl api failed\
+[Error]: Failed to apply for memory.\
+        Check the remaining storage space in the hardware environment.\
+EL0004: [PID: 2572605] 2026-05-07-11:34:07.563.406 Failed to allocate memory.\
+        Possible Cause: Available memory is insufficient.\
+        Solution: Close applications not in use.\
+        TraceBack (most recent call last):\
+        Check param failed, mdl can not be null.[FUNC:LaunchKernelPrepare][FILE:context.cc][LINE:906]\
+        kernel launch prepare failed.[FUNC:LaunchKernelWithHandle][FILE:context.cc][LINE:1098]\
+        rtKernelLaunchWithHandleV2 execute failed, reason=[module new memory error][FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:53]\
+        Assert ((rtKernelLaunchWithHandleV2(executor->args->binInfo->binHandle, tilingKey, blockDim, &executor->argsExt, nullptr, stream, &cfgInfo)) == 0) failed\
+        Assert ((NnopbaseExecutorLaunchKernel(executor, stream, blockDim)) == 0) failed\
+        Check NnopbaseExecutorKernelLaunch(executor, stream) failed\
+        Check NnopbaseRunWithWorkspace(executor, stream, workspace, workspaceSize) failed\
+\
+Exception raised from operator() at build/CMakeFiles/torch_npu.dir/compiler_depend.ts:86 (most recent call first):\
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0xffff870edea4 in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/lib/libc10.so)\
+frame #1: c10::detail::torchCheckFail(char const*, char const*, unsigned int, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0xe4 (0xffff8708de44 in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/lib/libc10.so)\
+frame #2: <unknown function> + 0x12964d0 (0xffff6f1a74d0 in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch_npu/lib/libtorch_npu.so)\
+frame #3: <unknown function> + 0x26e6c10 (0xffff705f7c10 in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch_npu/lib/libtorch_npu.so)\
+frame #4: <unknown function> + 0x961a94 (0xffff6e872a94 in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch_npu/lib/libtorch_npu.so)\
+frame #5: <unknown function> + 0x9644c0 (0xffff6e8754c0 in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch_npu/lib/libtorch_npu.so)\
+frame #6: <unknown function> + 0x96072c (0xffff6e87172c in /home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch_npu/lib/libtorch_npu.so)\
+frame #7: <unknown function> + 0x101d98 (0xffff86ee1d98 in /home/ma-user/anaconda3/envs/lyf_train/bin/../lib/libstdc++.so.6)\
+frame #8: <unknown function> + 0x87b0 (0xffff9fe2a7b0 in /usr/lib64/libpthread.so.0)\
+frame #9: <unknown function> + 0xd522c (0xffff9fc6e22c in /usr/lib64/libc.so.6)\
+\
+[rank0]: Traceback (most recent call last):\
+[rank0]:   File "/home/ma-user/work/lyf/LlamaFactory-qwen35/src/train.py", line 28, in <module>\
+[rank0]:     main()\
+[rank0]:   File "/home/ma-user/work/lyf/LlamaFactory-qwen35/src/train.py", line 19, in main\
+[rank0]:     run_exp()\
+[rank0]:   File "/home/ma-user/work/lyf/LlamaFactory-qwen35/src/llamafactory/train/tuner.py", line 139, in run_exp\
+[rank0]:     _training_function(config=\{"args": args, "callbacks": callbacks\})\
+[rank0]:   File "/home/ma-user/work/lyf/LlamaFactory-qwen35/src/llamafactory/train/tuner.py", line 107, in _training_function\
+[rank0]:     run_sft(model_args, data_args, training_args, finetuning_args, generating_args, callbacks)\
+[rank0]:   File "/home/ma-user/work/lyf/LlamaFactory-qwen35/src/llamafactory/train/sft/workflow.py", line 140, in run_sft\
+[rank0]:     train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)\
+[rank0]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/transformers/trainer.py", line 1424, in train\
+[rank0]:     return inner_training_loop(\
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/transformers/trainer.py", line 1506, in _inner_training_loop\
+[rank0]:     self._run_epoch(\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/transformers/trainer.py", line 1756, in _run_epoch\
+[rank0]:     grad_norm = self._clip_grad_norm(model)\
+[rank0]:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/transformers/trainer.py", line 2493, in _clip_grad_norm\
+[rank0]:     return self.accelerator.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)\
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/accelerate/accelerator.py", line 2897, in clip_grad_norm_\
+[rank0]:     return torch.nn.utils.clip_grad_norm_(parameters, max_norm, norm_type=norm_type)\
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/nn/utils/clip_grad.py", line 38, in _no_grad_wrapper\
+[rank0]:     return func(*args, **kwargs)\
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/nn/utils/clip_grad.py", line 219, in clip_grad_norm_\
+[rank0]:     total_norm = _get_total_norm(grads, norm_type, error_if_nonfinite, foreach)\
+[rank0]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/nn/utils/clip_grad.py", line 38, in _no_grad_wrapper\
+[rank0]:     return func(*args, **kwargs)\
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^\
+[rank0]:   File "/home/ma-user/anaconda3/envs/lyf_train/lib/python3.11/site-packages/torch/nn/utils/clip_grad.py", line 101, in _get_total_norm\
+[rank0]:     total_norm = torch.linalg.vector_norm(\
+[rank0]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^\
+[rank0]: RuntimeError: The Inner error is reported as above. The process exits for this inner error, and the current working operator name is aclnnForeachNorm.\
+[rank0]: Since the operator is called asynchronously, the stacktrace may be inaccurate. If you want to get the accurate stacktrace, please set the environment variable ASCEND_LAUNCH_BLOCKING=1.\
+[rank0]: Note: ASCEND_LAUNCH_BLOCKING=1 will force ops to run in synchronous mode, resulting in performance degradation. Please unset ASCEND_LAUNCH_BLOCKING in time after debugging.\
+[rank0]: [ERROR] 2026-05-07-11:34:07 (PID:2572605, Device:0, RankID:0) ERR00100 PTA call acl api failed.}

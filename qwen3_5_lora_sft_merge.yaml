@@ -1,0 +1,14 @@
+### Note: DO NOT use quantized model or quantization_bit when merging lora adapters
+
+### model
+model_name_or_path: /home/ma-user/work/lyf/model/Qwen3_5-9B
+adapter_name_or_path: /home/ma-user/work/lyf/outmodel/crash_1cam_2cls_train_3s_39k_bs256/checkpoint-600
+template: qwen3_5_nothink
+finetuning_type: lora
+trust_remote_code: true
+
+### export
+export_dir: /home/ma-user/work/lyf/outmodel/crash_1cam_2cls_train_3s_39k_bs256-600_nothink-merge
+export_size: 5
+export_device: npu
+export_legacy_format: false
