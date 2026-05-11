@@ -36,10 +36,29 @@ except ImportError:
 from qwen_vl_utils import process_vision_info
 
 
-DEFAULT_PROMPT = """你是一个自动驾驶安全专家。请观看以下车辆行驶视频：自车前视视角<video>
-任务：自动驾驶前视场景碰撞风险二分类。
-请严格根据物理环境和车辆动态，判断当前自车是否面临真实的碰撞风险。
-请仅输出"高风险"或"安全"，不要输出其他任何字符："""
+# IMPORTANT: this MUST match the prompt used during training exactly.
+# Any difference (even punctuation / whitespace) changes the tokenization
+# and shifts the hidden state at the last position — cls_head was trained
+# on a specific distribution of "last hidden states", so OOD prompts cause
+# uniformly biased outputs.
+DEFAULT_PROMPT = (
+    "你是一个自动驾驶安全专家。请观看以下车辆行驶视频：自车前视视角<video>\n"
+    "任务：自动驾驶前视场景碰撞风险二分类。\n"
+    "请严格根据物理环境和车辆动态，判断当前自车是否面临真实的碰撞风险。\n\n"
+    "【判定规则】：\n"
+    "- 输出“高风险”（真实危险）：自车行驶轨迹上存在即将发生物理碰撞的实体威胁。"
+    "只要客观环境构成了紧急碰撞危险，均属于此类，包括但不限于以下典型场景：\n"
+    "  1. 绝对距离压迫：正前方已有明确的实体障碍物（或静止目标）极度逼近。\n"
+    "  2. 纵向追尾/相对速度危险：自车车速过快或前方目标骤停，导致两者的相对距离在画面中急速缩短。\n"
+    "  3. 横向/盲区突发侵入：视野盲区或道路两侧突然有目标（行人、两轮车、其他车辆等）横向切入自车轨迹。\n"
+    "  4. 全局轨迹冲突：如对向车辆失控越线逆行、路口侧方车辆违规抢行、异物掉落等任何即将导致真实碰撞的危险事件。\n"
+    "- 输出“安全”（低风险/系统误触发）：前方及预测轨迹内环境安全，"
+    "与周围目标的相对距离/速度保持安全，无任何即将发生碰撞的实体威胁。"
+    "**特别注意：即使视频画面出现剧烈抖动、车头明显下沉（表示自车正在急刹减速），"
+    "只要客观上并没有真正会撞上的实体障碍物，均属于系统误触发，必须严格输出“安全”。**\n\n"
+    "请忽略自车不必要的减速动作，基于全局视野评估客观物理威胁。"
+    "请仅输出“高风险”或“安全”，不要输出其他任何字符："
+)
 
 
 def print_section(title):
