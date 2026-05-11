@@ -77,6 +77,12 @@ class ModelPool:
                 add_generation_prompt=True,
                 enable_thinking=False,
             )
+            # CRITICAL: even with enable_thinking=False, the Qwen3.5 chat_template.jinja
+            # still inserts an empty "<think>\n\n</think>\n\n" block after assistant tag.
+            # The training template (qwen3_5_nothink) does NOT add this block, so the
+            # hidden state position at the answer differs by 5 tokens. Strip it here
+            # to make inference prompts align with training.
+            text = text.replace("<think>\n\n</think>\n\n", "")
 
             image_inputs, video_inputs, video_kwargs = process_vision_info(
                 messages,

@@ -167,8 +167,13 @@ def main():
         add_generation_prompt=True,
         enable_thinking=False,
     )
-    print(f"--- Chat template output (raw text) ---")
-    print(repr(text[-500:]))  # last 500 chars
+    print(f"--- Chat template output (raw text, BEFORE strip) ---")
+    print(repr(text[-200:]))
+    # Strip empty think block (Qwen3.5 chat template inserts it even with enable_thinking=False,
+    # but the training template qwen3_5_nothink does NOT have it).
+    text = text.replace("<think>\n\n</think>\n\n", "")
+    print(f"--- AFTER stripping <think></think> ---")
+    print(repr(text[-200:]))
     print(f"\nText ends with: {repr(text[-50:])}")
 
     image_inputs, video_inputs, video_kwargs = process_vision_info(
