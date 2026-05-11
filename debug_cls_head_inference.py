@@ -278,8 +278,13 @@ def main():
     print(f"safe_id positions in ids_with_answer: {neg_positions.tolist()}")
 
     if pos_positions.numel() > 0:
-        answer_pos = pos_positions[0].item()
+        # IMPORTANT: 高风险/安全 may appear multiple times in the prompt itself
+        # (the rules text mentions both classes). The actual appended answer is
+        # always the LAST occurrence. Take that, not the first.
+        answer_pos = pos_positions[-1].item()
         hidden_pos_training = answer_pos - 1
+        print(f"  (high_risk_id appears at: {pos_positions.tolist()})")
+        print(f"  taking LAST occurrence (the appended answer): answer_pos={answer_pos}")
         print(f"Training-style answer_pos = {answer_pos}, hidden_pos = {hidden_pos_training}")
         # Run forward with answer included
         with torch.no_grad():
