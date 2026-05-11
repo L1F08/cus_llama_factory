@@ -142,12 +142,14 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
     device = f"npu:{rank}"
     torch.npu.set_device(device)
 
-    print(f"Rank {rank}: loading merged Qwen3.5 model from {model_args.model_id}")
+    # Attention backend: default SDPA (works on NPU); override via INFER_ATTN_IMPL=flash_attention_2 / eager
+    attn_impl = os.getenv("INFER_ATTN_IMPL", "sdpa")
+    print(f"Rank {rank}: loading merged Qwen3.5 model from {model_args.model_id} (attn={attn_impl})")
     model = TargetVLModel.from_pretrained(
         model_args.model_id,
         torch_dtype="auto",
         device_map=None,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
     ).eval().to(device)
 
     processor = AutoProcessor.from_pretrained(model_args.model_id)
