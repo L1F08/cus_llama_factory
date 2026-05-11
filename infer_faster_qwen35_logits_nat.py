@@ -391,14 +391,19 @@ class ModelPool:
         self.token_id_safe = self.processor.tokenizer.encode("安全", add_special_tokens=False)[0]
         self.token_id_risk = self.processor.tokenizer.encode("高风险", add_special_tokens=False)[0]
         # Qwen3 生成参数
+        # IMPORTANT: max_new_tokens=1 instead of 4096.
+        # Reason: 我们只用 outputs.scores[0] (第一步 logits)，根本不需要后续生成。
+        # 旧版的 4096 在「strip <think></think> 块」之后会触发 Qwen3.5 的 reasoning
+        # 习惯（pre-training 学到的，fine-tune 数据无法完全压制），模型会生成几百到
+        # 上千个 token 的内部"思考"才输出答案，导致单样本耗时 10x+。
+        # 既然只读第一步 logits，max_new_tokens=1 就够了 —— 不会改变 logit 值。
         self.gen_kwargs = {
-            "max_new_tokens": 4096,  
+            "max_new_tokens": 1,
             "do_sample": False,
             "temperature": 0.1,
             "top_p": 0.95,
             "repetition_penalty": 1.00,
-            # 让 generate 函数返回 logits 等详细信息
-            "return_dict_in_generate": True, 
+            "return_dict_in_generate": True,
             "output_scores": True,
             "pad_token_id": self.processor.tokenizer.pad_token_id or self.processor.tokenizer.eos_token_id
         }
