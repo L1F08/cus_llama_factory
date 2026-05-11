@@ -178,9 +178,10 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
         f"label_map: 0='{meta['label_map']['0']}', 1='{meta['label_map']['1']}'"
     )
 
-    # Optional: read video params from training_args / env if you exposed them; default matches v2
+    # IMPORTANT: video params MUST match training, else ViT pos_embed (size 2304) is exceeded
+    # and hidden states drift OOD. Default 589824 = 768×768 = exactly 2304 patches per frame.
     video_fps = float(os.getenv("INFER_VIDEO_FPS", "8.0"))
-    video_max_pixels = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "602112"))
+    video_max_pixels = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "589824"))
 
     model_pool = ModelPool(
         model, processor, cls_head, meta["label_map"], device,
