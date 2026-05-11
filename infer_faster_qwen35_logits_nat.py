@@ -416,11 +416,18 @@ class ModelPool:
 
             # 应用聊天模板
             text = self.processor.apply_chat_template(
-                messages, 
-                tokenize=False, 
+                messages,
+                tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False  # 关闭自动补全 <think> 标签，确保第一个生成的 Token 就是答案
+                enable_thinking=False  # 让模板走 nothink 分支
             )
+            # 关键修复：Qwen3.5-VL 的 chat_template.jinja 即使 enable_thinking=False
+            # 也会在 assistant 标签后插入空的 "<think>\n\n</think>\n\n" 块。
+            # 但训练用的 qwen3_5_nothink 模板根本不会加这个块——这导致 generate()
+            # 的起始位置 OOD（训练时是 assistant\n，推理时是 </think>\n\n），
+            # logits 严重偏离训练分布，best threshold 被压到 ~0.1。
+            # Strip 后让推理 prompt 与训练完全对齐。
+            text = text.replace("<think>\n\n</think>\n\n", "")
             
             # 视觉处理
             image_inputs, video_inputs, video_kwargs = process_vision_info(
