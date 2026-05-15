@@ -3,6 +3,7 @@ import json
 import threading
 import heapq
 import time
+import queue as _queue
 from tqdm import tqdm
 import torch
 import torch_npu
@@ -112,93 +113,86 @@ class BatchedInferencer:
             "pad_token_id": pad_id,
         }
 
+    def build_inputs_cpu(self, batch):
+        """主线程 CPU 工作：合并 vision 输入 + processor 打包 + padding。返回 CPU 端 BatchFeature。
+        不做 .to(device)，让 NPU 传输/计算都在 NPU 工作线程内同一 stream 上。"""
+        texts = [item["text"] for item in batch]
+
+        # 跨样本拼接 vision 输入
+        all_images = []
+        for item in batch:
+            if item["image_inputs"]:
+                all_images.extend(item["image_inputs"])
+        all_images = all_images or None
+
+        all_videos = []
+        for item in batch:
+            if item["video_inputs"]:
+                all_videos.extend(item["video_inputs"])
+        all_videos = all_videos or None
+
+        all_video_metadatas = []
+        for item in batch:
+            if item["video_metadatas"]:
+                all_video_metadatas.extend(item["video_metadatas"])
+        all_video_metadatas = all_video_metadatas or None
+
+        merged_kwargs = {}
+        all_kw_keys = set()
+        for item in batch:
+            if item["video_kwargs"]:
+                all_kw_keys.update(item["video_kwargs"].keys())
+        for k in all_kw_keys:
+            vals = [item["video_kwargs"][k] for item in batch
+                    if item["video_kwargs"] and k in item["video_kwargs"]]
+            if not vals:
+                continue
+            if isinstance(vals[0], (list, tuple)):
+                flat = []
+                for v in vals:
+                    flat.extend(v)
+                merged_kwargs[k] = flat
+            else:
+                merged_kwargs[k] = vals[0]
+
+        return self.processor(
+            text=texts,
+            images=all_images,
+            videos=all_videos,
+            video_metadata=all_video_metadatas,
+            padding=True,
+            return_tensors="pt",
+            **merged_kwargs,
+        )
+
+    def run_inference(self, batch, cpu_inputs):
+        """NPU 工作线程调用：.to(device) → generate → decode → 拼结果"""
+        inputs = cpu_inputs.to(self.device)
+        with torch.no_grad():
+            generated_ids = self.model.generate(**inputs, **self.gen_kwargs)
+        prompt_len = inputs.input_ids.shape[1]
+        generated_ids_trimmed = generated_ids[:, prompt_len:]
+        out_texts = self.processor.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+        # 去掉 torch.npu.empty_cache() —— 每 batch 调一次会插强同步点拖慢节奏
+        return [
+            {"id": item["video_path"], "answers": [out_texts[i]]}
+            for i, item in enumerate(batch)
+        ]
+
     def infer_batch(self, batch):
-        """batch: List[preprocessed dict]。返回 List[{id, answers}]"""
+        """同步推理，仅用于主流水线之外的兜底分支。"""
         if not batch:
             return []
-
         try:
-            texts = [item["text"] for item in batch]
-
-            # 跨样本拼接 vision 输入
-            all_images = []
-            for item in batch:
-                if item["image_inputs"]:
-                    all_images.extend(item["image_inputs"])
-            all_images = all_images or None
-
-            all_videos = []
-            for item in batch:
-                if item["video_inputs"]:
-                    all_videos.extend(item["video_inputs"])
-            all_videos = all_videos or None
-
-            all_video_metadatas = []
-            for item in batch:
-                if item["video_metadatas"]:
-                    all_video_metadatas.extend(item["video_metadatas"])
-            all_video_metadatas = all_video_metadatas or None
-
-            # 合并 video_kwargs：
-            #   - list/tuple 值是 per-video 的 (例如 fps)，跨样本拼平
-            #   - 标量值是全局开关 (例如 do_sample_frames=False)，所有样本本来就一致，
-            #     原样透传一个标量；强行包成 list 会被 processor 校验器拒绝
-            merged_kwargs = {}
-            all_kw_keys = set()
-            for item in batch:
-                if item["video_kwargs"]:
-                    all_kw_keys.update(item["video_kwargs"].keys())
-            for k in all_kw_keys:
-                vals = [item["video_kwargs"][k] for item in batch
-                        if item["video_kwargs"] and k in item["video_kwargs"]]
-                if not vals:
-                    continue
-                if isinstance(vals[0], (list, tuple)):
-                    flat = []
-                    for v in vals:
-                        flat.extend(v)
-                    merged_kwargs[k] = flat
-                else:
-                    # 标量：同一次运行里所有样本应一致，取第一个透传
-                    merged_kwargs[k] = vals[0]
-
-            inputs = self.processor(
-                text=texts,
-                images=all_images,
-                videos=all_videos,
-                video_metadata=all_video_metadatas,
-                padding=True,
-                return_tensors="pt",
-                **merged_kwargs,
-            ).to(self.device)
-
-            with torch.no_grad():
-                generated_ids = self.model.generate(**inputs, **self.gen_kwargs)
-
-            # left padding 下所有 sample 的 prompt 长度都等于 inputs.input_ids.shape[1]
-            prompt_len = inputs.input_ids.shape[1]
-            generated_ids_trimmed = generated_ids[:, prompt_len:]
-
-            out_texts = self.processor.batch_decode(
-                generated_ids_trimmed,
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False,
-            )
-
-            del inputs, generated_ids, generated_ids_trimmed
-            torch.npu.empty_cache()
-
-            return [
-                {"id": item["video_path"], "answers": [out_texts[i]]}
-                for i, item in enumerate(batch)
-            ]
+            cpu_inputs = self.build_inputs_cpu(batch)
+            return self.run_inference(batch, cpu_inputs)
         except Exception as e:
-            # 整批失败：所有样本都打 Error，避免静默丢任务
             err = f"Batch Error: {str(e)}"
             print(f"[Batch fail @ {self.device}] {err}")
-            try:
-                torch.npu.empty_cache()
-            except: pass
             return [
                 {"id": item["video_path"], "answers": [err]}
                 for item in batch
@@ -271,12 +265,19 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
 
         worker_loads = [(0, w) for w in range(world_size)]
         heapq.heapify(worker_loads)
-        task_lists = [[] for _ in range(world_size)]
+        task_lists_sized = [[] for _ in range(world_size)]
 
         for size, sample, video_path in sample_sizes:
             load, w = heapq.heappop(worker_loads)
-            task_lists[w].append((sample, video_path))
+            task_lists_sized[w].append((size, sample, video_path))
             heapq.heappush(worker_loads, (load + size, w))
+
+        # ★ 每个 rank 内部按文件大小降序排序：同一 batch 内 token 数差异变小，
+        # left-padding 浪费的 prefill 算力随之减少。
+        task_lists = []
+        for w in range(world_size):
+            task_lists_sized[w].sort(key=lambda x: x[0], reverse=True)
+            task_lists.append([(s, v) for _, s, v in task_lists_sized[w]])
 
         dist_obj = [task_lists]
     else:
@@ -291,20 +292,70 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
 
     print(f"Rank {rank}: 分配到 {len(my_queue)} 个任务，预处理并行数 {PREPROCESS_WORKERS}，推理 batch={BATCH_SIZE}")
 
-    # ========== 流水线：CPU 预处理并行 → 主线程凑批 → NPU 推理 ==========
+    # ========== 三段流水线 ==========
+    # Stage 1 (CPU 线程池): 视频解码 + chat_template + vision tokenize
+    # Stage 2 (主线程):     凑齐 BATCH_SIZE → build_inputs_cpu (processor 打包)
+    # Stage 3 (NPU 单线程):  .to(device) → model.generate → decode
+    # Stage 2 / Stage 3 通过队列异步衔接，主线程在 NPU 跑当前 batch 时可并行准备下一批
     total = len(my_queue)
-    save_step = max(BATCH_SIZE * 2, 10)  # 每攒够这么多个新结果落盘一次
+    save_step = max(BATCH_SIZE * 2, 10)
     pbar = tqdm(total=total, desc=f"Rank {rank}", position=rank)
 
     last_saved = len(results)
     pending_batch = []
 
     def maybe_save():
+        nonlocal last_saved
         if len(results) - last_saved >= save_step:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(results, f, ensure_ascii=False, indent=2)
-            return len(results)
-        return last_saved
+            last_saved = len(results)
+
+    npu_inbox = _queue.Queue(maxsize=2)
+    npu_outbox = _queue.Queue()
+
+    def npu_worker():
+        while True:
+            item = npu_inbox.get()
+            if item is None:
+                return
+            batch, cpu_inputs = item
+            try:
+                br = inferencer.run_inference(batch, cpu_inputs)
+            except Exception as e:
+                err = f"NPU Error: {str(e)}"
+                print(f"[NPU worker @ {device}] {err}", flush=True)
+                br = [{"id": x["video_path"], "answers": [err]} for x in batch]
+            npu_outbox.put(br)
+
+    npu_thread = threading.Thread(target=npu_worker, daemon=True)
+    npu_thread.start()
+
+    submitted = 0
+    consumed = 0
+
+    def drain_npu_results(block_until=None):
+        nonlocal consumed
+        while True:
+            if block_until is None:
+                try:
+                    br = npu_outbox.get_nowait()
+                except _queue.Empty:
+                    return
+            else:
+                if consumed >= block_until:
+                    return
+                br = npu_outbox.get()
+            results.extend(br)
+            pbar.update(len(br))
+            consumed += 1
+            maybe_save()
+
+    # 诊断 (rank 0 only)
+    t_loop_start = time.perf_counter() if rank == 0 else None
+    t_build_total = 0.0
+    t_wait_npu_total = 0.0
+    diag_every = 5
 
     if total > 0:
         with ThreadPoolExecutor(max_workers=PREPROCESS_WORKERS) as executor:
@@ -326,32 +377,65 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
                 except Exception as e:
                     results.append({"id": video_path, "answers": [f"Preprocess Critical Error: {str(e)}"]})
                     pbar.update(1)
-                    last_saved = maybe_save()
+                    maybe_save()
                     continue
 
                 if item.get("error"):
-                    # 预处理失败的样本不进 batch，直接记 Error
                     results.append({"id": item["video_path"], "answers": [f"Error: {item['error']}"]})
                     pbar.update(1)
-                    last_saved = maybe_save()
+                    maybe_save()
                 else:
                     pending_batch.append(item)
 
-                # 触发推理：batch 满 / 没有后续待预处理样本时把剩下的样本送进去
                 should_infer = (
                     len(pending_batch) >= BATCH_SIZE
                     or (remaining == 0 and len(pending_batch) > 0)
                 )
                 if should_infer:
-                    batch_results = inferencer.infer_batch(pending_batch)
-                    results.extend(batch_results)
-                    pbar.update(len(batch_results))
+                    if rank == 0:
+                        _t0 = time.perf_counter()
+                    try:
+                        cpu_inputs = inferencer.build_inputs_cpu(pending_batch)
+                    except Exception as e:
+                        err = f"build_inputs error: {str(e)}"
+                        print(f"[Rank {rank}] {err}", flush=True)
+                        results.extend([{"id": x["video_path"], "answers": [err]} for x in pending_batch])
+                        pbar.update(len(pending_batch))
+                        pending_batch = []
+                        maybe_save()
+                        continue
+                    if rank == 0:
+                        t_build_total += time.perf_counter() - _t0
+
+                    if rank == 0:
+                        _t0 = time.perf_counter()
+                    npu_inbox.put((pending_batch, cpu_inputs))  # 队列满则阻塞 (背压)
+                    if rank == 0:
+                        t_wait_npu_total += time.perf_counter() - _t0
+
+                    submitted += 1
                     pending_batch = []
-                    last_saved = maybe_save()
+                    drain_npu_results(block_until=None)
+
+                    if rank == 0 and submitted % diag_every == 0:
+                        elapsed = time.perf_counter() - t_loop_start
+                        sps = submitted * BATCH_SIZE / elapsed
+                        print(
+                            f"\n[Rank 0 timing] submitted={submitted} consumed={consumed} "
+                            f"elapsed={elapsed:.1f}s | build_inputs={t_build_total:.1f}s "
+                            f"({100*t_build_total/elapsed:.0f}%) | wait_for_NPU={t_wait_npu_total:.1f}s "
+                            f"({100*t_wait_npu_total/elapsed:.0f}%) | throughput={sps:.2f} samples/s",
+                            flush=True,
+                        )
+
+    # 所有 batch 都已提交；把剩余结果取回，然后告诉 NPU 线程结束
+    drain_npu_results(block_until=submitted)
+    npu_inbox.put(None)
+    npu_thread.join(timeout=120)
 
     pbar.close()
 
-    # 兜底：还有零散没推的，再 flush 一次 (理论上 remaining==0 分支已处理)
+    # 兜底：极少数情况下 pending_batch 可能因异常残留，同步推理收尾
     if pending_batch:
         batch_results = inferencer.infer_batch(pending_batch)
         results.extend(batch_results)
