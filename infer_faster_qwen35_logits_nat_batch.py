@@ -78,17 +78,92 @@ def preprocess_sample(processor, messages, video_path):
                 video_inputs = list(video_inputs)
                 video_metadatas = list(video_metadatas)
 
+        # ★ 关键：把 processor() 调用挪到 worker 线程里，每样本一次。
+        # 上次单进程 bench 显示，跨 8 ranks 并发时 batched processor 比 single-sample
+        # 慢得多 (23s vs 14.6s)；并行做 single-sample 再 collate 才是正确架构。
+        cpu_inputs = processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            video_metadata=video_metadatas,
+            padding=False,                    # 单样本无需 padding
+            return_tensors="pt",
+            **(video_kwargs or {}),
+        )
+
         return {
             "video_path": video_path,
-            "text": text,
-            "image_inputs": image_inputs,
-            "video_inputs": video_inputs,
-            "video_metadatas": video_metadatas,
-            "video_kwargs": video_kwargs or {},
+            "cpu_inputs": cpu_inputs,
             "error": None,
         }
     except Exception as e:
         return {"video_path": video_path, "error": str(e)}
+
+
+# ====================== Custom collator (替代主线程的 batched processor 调用) ======================
+def _collate_qwen_vl(per_sample_inputs, pad_token_id):
+    """把 N 份 batch=1 的 BatchFeature 拼成 batch=N。
+
+    根据 diff_processor_outputs.py 实测，Qwen3.5-VL processor 输出 5 个字段：
+      - input_ids / attention_mask / mm_token_type_ids: shape [1, seq_len_i] —— 左 pad 到 max_len
+      - pixel_values_videos: shape [num_patches_i, 1536] —— 沿 dim 0 cat
+      - video_grid_thw: shape [num_videos_i, 3] —— 沿 dim 0 cat
+
+    采用通用规则: 所有 shape=[1, X] 且 X 跨样本不一致的 tensor 都 left-pad；
+    其它 tensor 沿 dim 0 cat；list/标量按列表 extend。这样将来新字段也不会再翻车。
+    """
+    from transformers.feature_extraction_utils import BatchFeature
+
+    if not per_sample_inputs:
+        return None
+
+    max_len = max(s["input_ids"].shape[1] for s in per_sample_inputs)
+
+    all_keys = set()
+    for s in per_sample_inputs:
+        all_keys.update(s.keys())
+
+    out = {}
+    for k in all_keys:
+        vals = [s[k] for s in per_sample_inputs if k in s]
+        if not vals:
+            continue
+        v0 = vals[0]
+
+        if torch.is_tensor(v0) and v0.dim() >= 2 and v0.shape[0] == 1:
+            # 形如 [1, seq_len_i, ...] 的 per-sample tensor
+            seq_lens = [v.shape[1] for v in vals]
+            if len(set(seq_lens)) > 1 or vals[0].shape[1] < max_len:
+                # 长度不一致 → left pad 到 max_len
+                pad_val = pad_token_id if k == "input_ids" else 0
+                padded = []
+                for v in vals:
+                    cur = v.shape[1]
+                    if cur < max_len:
+                        pad_shape = list(v.shape)
+                        pad_shape[1] = max_len - cur
+                        pad_t = torch.full(pad_shape, pad_val, dtype=v.dtype, device=v.device)
+                        v = torch.cat([pad_t, v], dim=1)
+                    padded.append(v)
+                out[k] = torch.cat(padded, dim=0)
+            else:
+                # 长度一致，直接 stack
+                out[k] = torch.cat(vals, dim=0)
+        elif torch.is_tensor(v0):
+            # 例如 pixel_values_videos [num_patches, hidden] 或 video_grid_thw [num_videos, 3]
+            try:
+                out[k] = torch.cat(vals, dim=0)
+            except Exception:
+                out[k] = vals  # 兜底
+        elif isinstance(v0, list):
+            merged = []
+            for v in vals:
+                merged.extend(v)
+            out[k] = merged
+        else:
+            out[k] = vals  # 标量等
+
+    return BatchFeature(data=out)
 
 
 # ====================== NPU 批量推理 + Logits 提取 ======================
@@ -122,71 +197,18 @@ class BatchedLogitsInferencer:
         }
 
     def build_inputs_cpu(self, batch, _stats=None):
-        """主线程 CPU 工作：合并 vision 输入 + processor 打包 + padding。返回 CPU 端 BatchFeature。
-        不做 .to(device)，让 NPU 传输/计算都在 NPU 工作线程内同一 stream 上。
-        _stats: 可选 dict，用于累计 'merge' / 'processor' 分段耗时（仅诊断用）。"""
+        """主线程 CPU 工作：把 N 份 batch=1 的 per-sample BatchFeature collate 成 batch=N。
+        重活 (processor() 调用) 已经在 PREPROCESS_WORKERS 里每样本并行做完，
+        主线程只做轻量 left-pad + cat，应该是毫秒级。"""
         if _stats is not None:
             _t0 = time.perf_counter()
-        texts = [item["text"] for item in batch]
 
-        # 跨样本拼接 vision 输入
-        all_images = []
-        for item in batch:
-            if item["image_inputs"]:
-                all_images.extend(item["image_inputs"])
-        all_images = all_images or None
-
-        all_videos = []
-        for item in batch:
-            if item["video_inputs"]:
-                all_videos.extend(item["video_inputs"])
-        all_videos = all_videos or None
-
-        all_video_metadatas = []
-        for item in batch:
-            if item["video_metadatas"]:
-                all_video_metadatas.extend(item["video_metadatas"])
-        all_video_metadatas = all_video_metadatas or None
-
-        # 合并 video_kwargs：
-        #   - list/tuple 值是 per-video 的 (例如 fps)，跨样本拼平
-        #   - 标量值是全局开关 (例如 do_sample_frames=False)，所有样本本来就一致，
-        #     原样透传一个标量；强行包成 list 会被 processor 校验器拒绝
-        merged_kwargs = {}
-        all_kw_keys = set()
-        for item in batch:
-            if item["video_kwargs"]:
-                all_kw_keys.update(item["video_kwargs"].keys())
-        for k in all_kw_keys:
-            vals = [item["video_kwargs"][k] for item in batch
-                    if item["video_kwargs"] and k in item["video_kwargs"]]
-            if not vals:
-                continue
-            if isinstance(vals[0], (list, tuple)):
-                flat = []
-                for v in vals:
-                    flat.extend(v)
-                merged_kwargs[k] = flat
-            else:
-                # 标量：同一次运行里所有样本应一致，取第一个透传
-                merged_kwargs[k] = vals[0]
+        per_sample = [item["cpu_inputs"] for item in batch]
+        pad_id = self.gen_kwargs["pad_token_id"]
+        inputs = _collate_qwen_vl(per_sample, pad_token_id=pad_id)
 
         if _stats is not None:
-            _stats["merge"] = _stats.get("merge", 0.0) + (time.perf_counter() - _t0)
-            _t0 = time.perf_counter()
-
-        inputs = self.processor(
-            text=texts,
-            images=all_images,
-            videos=all_videos,
-            video_metadata=all_video_metadatas,
-            padding=True,
-            return_tensors="pt",
-            **merged_kwargs,
-        )  # 注意：不 .to(device)，由 NPU worker 线程负责搬运
-
-        if _stats is not None:
-            _stats["processor"] = _stats.get("processor", 0.0) + (time.perf_counter() - _t0)
+            _stats["collate"] = _stats.get("collate", 0.0) + (time.perf_counter() - _t0)
         return inputs
 
     def run_inference(self, batch, cpu_inputs):
@@ -474,13 +496,11 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
                     if rank == 0 and submitted % diag_every == 0:
                         elapsed = time.perf_counter() - t_loop_start
                         sps = submitted * BATCH_SIZE / elapsed
-                        b_merge = build_stats.get("merge", 0.0)
-                        b_proc = build_stats.get("processor", 0.0)
+                        b_collate = build_stats.get("collate", 0.0)
                         print(
                             f"\n[Rank 0 timing] submitted={submitted} consumed={consumed} "
-                            f"elapsed={elapsed:.1f}s | build_inputs={t_build_total:.1f}s "
-                            f"({100*t_build_total/elapsed:.0f}%) "
-                            f"[merge={b_merge:.1f}s, processor={b_proc:.1f}s] | "
+                            f"elapsed={elapsed:.1f}s | collate={b_collate:.1f}s "
+                            f"({100*b_collate/elapsed:.0f}%) | "
                             f"wait_for_NPU={t_wait_npu_total:.1f}s "
                             f"({100*t_wait_npu_total/elapsed:.0f}%) | "
                             f"throughput={sps:.2f} samples/s",
