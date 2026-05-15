@@ -11,6 +11,7 @@ import json
 import heapq
 import time
 import threading
+import traceback
 import queue as _queue
 from tqdm import tqdm
 import torch
@@ -391,10 +392,24 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
             batch, cpu_inputs = item
             try:
                 br = inferencer.run_inference(batch, cpu_inputs)
-            except Exception as e:
-                err = f"NPU Error: {str(e)}"
-                print(f"[NPU worker @ {device}] {err}", flush=True)
-                br = [{"id": x["video_path"], "answers": [err]} for x in batch]
+            except BaseException as e:
+                # 用 traceback 打全栈到 stderr，避免 NPU 错误信息为空时啥也看不到
+                tb = traceback.format_exc()
+                err_summary = f"{type(e).__name__}: {str(e) or repr(e) or '<empty msg>'}"
+                print(f"\n[NPU worker @ {device}] EXCEPTION:\n{tb}", flush=True)
+                # 同时 dump 一些诊断信息，方便定位是哪个 sample / 什么 input 触发的
+                try:
+                    shapes = {}
+                    for k, v in cpu_inputs.items():
+                        if hasattr(v, "shape"):
+                            shapes[k] = tuple(v.shape)
+                        elif isinstance(v, list):
+                            shapes[k] = f"list[{len(v)}]"
+                    print(f"[NPU worker @ {device}] failing batch shapes: {shapes}", flush=True)
+                    print(f"[NPU worker @ {device}] failing batch ids: {[x['video_path'].rsplit('/', 1)[-1] for x in batch]}", flush=True)
+                except Exception:
+                    pass
+                br = [{"id": x["video_path"], "answers": [f"NPU Error: {err_summary}"]} for x in batch]
             npu_outbox.put(br)
 
     npu_thread = threading.Thread(target=npu_worker, daemon=True)
