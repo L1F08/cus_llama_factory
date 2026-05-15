@@ -118,8 +118,6 @@ def _collate_qwen_vl(per_sample_inputs, pad_token_id):
     if not per_sample_inputs:
         return None
 
-    max_len = max(s["input_ids"].shape[1] for s in per_sample_inputs)
-
     all_keys = set()
     for s in per_sample_inputs:
         all_keys.update(s.keys())
@@ -132,26 +130,29 @@ def _collate_qwen_vl(per_sample_inputs, pad_token_id):
         v0 = vals[0]
 
         if torch.is_tensor(v0) and v0.dim() >= 2 and v0.shape[0] == 1:
-            # 形如 [1, seq_len_i, ...] 的 per-sample tensor
-            seq_lens = [v.shape[1] for v in vals]
-            if len(set(seq_lens)) > 1 or vals[0].shape[1] < max_len:
-                # 长度不一致 → left pad 到 max_len
+            # 形如 [1, X, ...] 的 per-sample tensor。
+            # **关键**：是否需要 pad 只看「本字段 dim-1 各样本是否一致」——
+            # 不能拿 dim-1 跟 input_ids 的 max_len 比，否则会把 video_grid_thw 这种
+            # [1, 3] (3 是 T/H/W 三元组，不是 seq_len) 错误地 pad 到 max_len。
+            field_lens = [v.shape[1] for v in vals]
+            if len(set(field_lens)) > 1:
+                field_max = max(field_lens)
                 pad_val = pad_token_id if k == "input_ids" else 0
                 padded = []
                 for v in vals:
                     cur = v.shape[1]
-                    if cur < max_len:
+                    if cur < field_max:
                         pad_shape = list(v.shape)
-                        pad_shape[1] = max_len - cur
+                        pad_shape[1] = field_max - cur
                         pad_t = torch.full(pad_shape, pad_val, dtype=v.dtype, device=v.device)
-                        v = torch.cat([pad_t, v], dim=1)
+                        v = torch.cat([pad_t, v], dim=1)  # left-pad
                     padded.append(v)
                 out[k] = torch.cat(padded, dim=0)
             else:
-                # 长度一致，直接 stack
+                # 各样本 dim-1 一致 → 直接 cat 成 [N, X, ...]
                 out[k] = torch.cat(vals, dim=0)
         elif torch.is_tensor(v0):
-            # 例如 pixel_values_videos [num_patches, hidden] 或 video_grid_thw [num_videos, 3]
+            # 例如 pixel_values_videos [num_patches, hidden]
             try:
                 out[k] = torch.cat(vals, dim=0)
             except Exception:
