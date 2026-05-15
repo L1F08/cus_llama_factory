@@ -121,9 +121,12 @@ class BatchedLogitsInferencer:
             "pad_token_id": pad_id,
         }
 
-    def build_inputs_cpu(self, batch):
+    def build_inputs_cpu(self, batch, _stats=None):
         """主线程 CPU 工作：合并 vision 输入 + processor 打包 + padding。返回 CPU 端 BatchFeature。
-        不做 .to(device)，让 NPU 传输/计算都在 NPU 工作线程内同一 stream 上。"""
+        不做 .to(device)，让 NPU 传输/计算都在 NPU 工作线程内同一 stream 上。
+        _stats: 可选 dict，用于累计 'merge' / 'processor' 分段耗时（仅诊断用）。"""
+        if _stats is not None:
+            _t0 = time.perf_counter()
         texts = [item["text"] for item in batch]
 
         # 跨样本拼接 vision 输入
@@ -168,6 +171,10 @@ class BatchedLogitsInferencer:
                 # 标量：同一次运行里所有样本应一致，取第一个透传
                 merged_kwargs[k] = vals[0]
 
+        if _stats is not None:
+            _stats["merge"] = _stats.get("merge", 0.0) + (time.perf_counter() - _t0)
+            _t0 = time.perf_counter()
+
         inputs = self.processor(
             text=texts,
             images=all_images,
@@ -177,6 +184,9 @@ class BatchedLogitsInferencer:
             return_tensors="pt",
             **merged_kwargs,
         )  # 注意：不 .to(device)，由 NPU worker 线程负责搬运
+
+        if _stats is not None:
+            _stats["processor"] = _stats.get("processor", 0.0) + (time.perf_counter() - _t0)
         return inputs
 
     def run_inference(self, batch, cpu_inputs):
@@ -394,6 +404,7 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
     t_loop_start = time.perf_counter() if rank == 0 else None
     t_build_total = 0.0
     t_wait_npu_total = 0.0
+    build_stats = {} if rank == 0 else None  # 细分 build_inputs_cpu 的耗时来源
     diag_every = 5
 
     if total > 0:
@@ -435,7 +446,7 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
                     if rank == 0:
                         _t0 = time.perf_counter()
                     try:
-                        cpu_inputs = inferencer.build_inputs_cpu(pending_batch)
+                        cpu_inputs = inferencer.build_inputs_cpu(pending_batch, _stats=build_stats)
                     except Exception as e:
                         err = f"build_inputs error: {str(e)}"
                         print(f"[Rank {rank}] {err}", flush=True)
@@ -463,11 +474,16 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
                     if rank == 0 and submitted % diag_every == 0:
                         elapsed = time.perf_counter() - t_loop_start
                         sps = submitted * BATCH_SIZE / elapsed
+                        b_merge = build_stats.get("merge", 0.0)
+                        b_proc = build_stats.get("processor", 0.0)
                         print(
                             f"\n[Rank 0 timing] submitted={submitted} consumed={consumed} "
                             f"elapsed={elapsed:.1f}s | build_inputs={t_build_total:.1f}s "
-                            f"({100*t_build_total/elapsed:.0f}%) | wait_for_NPU={t_wait_npu_total:.1f}s "
-                            f"({100*t_wait_npu_total/elapsed:.0f}%) | throughput={sps:.2f} samples/s",
+                            f"({100*t_build_total/elapsed:.0f}%) "
+                            f"[merge={b_merge:.1f}s, processor={b_proc:.1f}s] | "
+                            f"wait_for_NPU={t_wait_npu_total:.1f}s "
+                            f"({100*t_wait_npu_total/elapsed:.0f}%) | "
+                            f"throughput={sps:.2f} samples/s",
                             flush=True,
                         )
 
