@@ -139,15 +139,28 @@ class BatchedInferencer:
                     all_video_metadatas.extend(item["video_metadatas"])
             all_video_metadatas = all_video_metadatas or None
 
-            # video_kwargs 里的 value 通常是 list (per-video)，需要跨样本拼平
+            # 合并 video_kwargs：
+            #   - list/tuple 值是 per-video 的 (例如 fps)，跨样本拼平
+            #   - 标量值是全局开关 (例如 do_sample_frames=False)，所有样本本来就一致，
+            #     原样透传一个标量；强行包成 list 会被 processor 校验器拒绝
             merged_kwargs = {}
+            all_kw_keys = set()
             for item in batch:
-                for k, v in (item["video_kwargs"] or {}).items():
-                    merged_kwargs.setdefault(k, [])
-                    if isinstance(v, list):
-                        merged_kwargs[k].extend(v)
-                    else:
-                        merged_kwargs[k].append(v)
+                if item["video_kwargs"]:
+                    all_kw_keys.update(item["video_kwargs"].keys())
+            for k in all_kw_keys:
+                vals = [item["video_kwargs"][k] for item in batch
+                        if item["video_kwargs"] and k in item["video_kwargs"]]
+                if not vals:
+                    continue
+                if isinstance(vals[0], (list, tuple)):
+                    flat = []
+                    for v in vals:
+                        flat.extend(v)
+                    merged_kwargs[k] = flat
+                else:
+                    # 标量：同一次运行里所有样本应一致，取第一个透传
+                    merged_kwargs[k] = vals[0]
 
             inputs = self.processor(
                 text=texts,
