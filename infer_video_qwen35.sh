@@ -10,6 +10,14 @@ export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 # export HCCL_CONNECT_TIMEOUT=4800    # 默认 120，设为 1 小时
 # export HCCL_OP_TIMEOUT=3600         # HCCL 操作超时
 
+# ---- 批量推理参数 ----
+# BATCH_SIZE: 每张 NPU 一次推理的样本数。910B 单卡 65GB 显存：
+#   - thinking 模式 (max_new_tokens=4096)：从 4 起步，显存富裕可上调到 6/8
+#   - 出现 OOM 时下调
+# PREPROCESS_WORKERS: CPU 端视频解码/tokenize 的并行线程数，与 NPU 推理流水线并行
+export BATCH_SIZE=4
+export PREPROCESS_WORKERS=6
+
 source /home/ma-user/cann8.1/Ascend/ascend-toolkit/set_env.sh
 source /home/ma-user/cann8.1/Ascend/nnal/atb/set_env.sh
 # source /usr/local/Ascend/ascend-toolkit/set_env.sh
@@ -53,7 +61,7 @@ DISTRIBUTED_ARGS="
     --master_addr localhost \
     --master_port 6662
 "
-torchrun $DISTRIBUTED_ARGS /home/ma-user/work/lyf/infer_faster_qwen35_logits_nat.py \
+torchrun $DISTRIBUTED_ARGS /home/ma-user/work/lyf/infer_faster_qwen35.py \
     --model_id $merge_out_path \
     --data_path ${infer_dataset_path} \
     --output_json ${output_json} \
