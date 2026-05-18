@@ -38,6 +38,12 @@ from llamafactory.model.cls_head import BinaryClassificationHead  # noqa: E402
 # ====================== 配置参数 ======================
 PARALLEL_WORKERS = 6
 
+# attention 实现。★ 必须与训练时一致！cls_head 训练没开 flash_attn:fa2，
+# LlamaFactory AUTO → transformers 默认 → sdpa。头是在 sdpa hidden state 上
+# 标定的，推理必须也用 sdpa，否则分布外 → 精度下降。
+# 需要时可 export ATTN_IMPL=eager (最确定) / flash_attention_2 (偏离训练)。
+ATTN_IMPL = os.environ.get("ATTN_IMPL", "sdpa")
+
 torch.npu.config.allow_internal_format = False
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["PYTORCH_NPU_ALLOC_CONF"] = "expandable_segments:True"
@@ -142,12 +148,12 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
     device = f"npu:{rank}"
     torch.npu.set_device(device)
 
-    print(f"Rank {rank}: loading merged Qwen3.5 model from {model_args.model_id}")
+    print(f"Rank {rank}: loading merged Qwen3.5 model from {model_args.model_id} (ATTN_IMPL={ATTN_IMPL})")
     model = TargetVLModel.from_pretrained(
         model_args.model_id,
         torch_dtype="auto",
         device_map=None,
-        attn_implementation="flash_attention_2",
+        attn_implementation=ATTN_IMPL,
     ).eval().to(device)
 
     processor = AutoProcessor.from_pretrained(model_args.model_id)
@@ -170,7 +176,10 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
         }
     cls_head = BinaryClassificationHead(meta["hidden_size"], dropout=meta.get("dropout", 0.0))
     cls_head.load_state_dict(torch.load(head_bin, map_location="cpu"))
-    cls_head = cls_head.to(device).to(torch.bfloat16).eval()
+    # ★ cls_head 保持 fp32 (它本来就是 fp32 训练的)。转 bf16 会把头压成 2-3 位
+    # 有效数字，决策边界附近 argmax 抖动。infer_single 里 h.to(self.cls_head_dtype)
+    # 会把 bf16 hidden state 升 fp32 再进头，消除头层舍入。
+    cls_head = cls_head.to(device).to(torch.float32).eval()
     print(
         f"Rank {rank}: loaded cls_head (hidden={meta['hidden_size']}); "
         f"label_map: 0='{meta['label_map']['0']}', 1='{meta['label_map']['1']}'"
