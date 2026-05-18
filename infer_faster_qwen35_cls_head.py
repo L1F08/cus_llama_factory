@@ -83,6 +83,11 @@ class ModelPool:
                 add_generation_prompt=True,
                 enable_thinking=False,
             )
+            # 关键：strip 掉模板硬塞的空 <think> 块。Qwen3.5-VL chat_template 即使
+            # enable_thinking=False 也会插入 "<think>\n\n</think>\n\n"，但 cls_head
+            # 训练用的 nothink 模板没有这个块 —— 不 strip 会让推理 prompt 与训练
+            # 分布外，cls_head 取的最后一个 token 位置/特征都偏。
+            text = text.replace("<think>\n\n</think>\n\n", "")
 
             image_inputs, video_inputs, video_kwargs = process_vision_info(
                 messages,

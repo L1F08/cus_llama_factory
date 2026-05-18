@@ -95,7 +95,11 @@ def preprocess_sample(processor, messages, video_path):
             add_generation_prompt=True,
             enable_thinking=False,
         )
-        # 注意：cls_head 版本不 strip 空 <think> 块 —— 与原 cls_head 单样本脚本保持一致。
+        # 关键：strip 掉模板硬塞的空 <think> 块。Qwen3.5-VL chat_template 即使
+        # enable_thinking=False 也会插入 "<think>\n\n</think>\n\n"，但 cls_head
+        # 训练用的 nothink 模板没有这个块 —— 不 strip 会让推理 prompt 与训练
+        # 分布外，cls_head 取的最后一个 token 位置/特征都偏。
+        text = text.replace("<think>\n\n</think>\n\n", "")
 
         image_inputs, video_inputs, video_kwargs = process_vision_info(
             messages,
