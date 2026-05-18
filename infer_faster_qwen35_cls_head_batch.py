@@ -63,6 +63,11 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 8))
 VIDEO_FPS = float(os.getenv("INFER_VIDEO_FPS", "8.0"))
 VIDEO_MAX_PIXELS = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "602112"))
 
+# attention 实现。flash_attention_2 在 Ascend NPU 上 reduction 顺序不固定，
+# 是 bf16 backbone 推理结果非确定的主因。需要完全可复现时设 ATTN_IMPL=eager
+# (确定但更慢/更耗显存)；追求速度且能接受边界样本偶尔翻转则保持默认。
+ATTN_IMPL = os.environ.get("ATTN_IMPL", "flash_attention_2")
+
 torch.npu.config.allow_internal_format = False
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["PYTORCH_NPU_ALLOC_CONF"] = "expandable_segments:True"
@@ -287,12 +292,13 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
     device = f"npu:{rank}"
     torch.npu.set_device(device)
 
-    print(f"Rank {rank}: 加载 merged Qwen3.5 模型 (BATCH_SIZE={BATCH_SIZE}, PREPROC_WORKERS={PREPROCESS_WORKERS})...")
+    print(f"Rank {rank}: 加载 merged Qwen3.5 模型 "
+          f"(BATCH_SIZE={BATCH_SIZE}, PREPROC_WORKERS={PREPROCESS_WORKERS}, ATTN_IMPL={ATTN_IMPL})...")
     model = TargetVLModel.from_pretrained(
         model_args.model_id,
         torch_dtype="auto",
         device_map=None,
-        attn_implementation="flash_attention_2",
+        attn_implementation=ATTN_IMPL,
     ).eval().to(device)
 
     processor = AutoProcessor.from_pretrained(model_args.model_id)
@@ -314,9 +320,12 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
         }
     cls_head = BinaryClassificationHead(meta["hidden_size"], dropout=meta.get("dropout", 0.0))
     cls_head.load_state_dict(torch.load(head_bin, map_location="cpu"))
-    cls_head = cls_head.to(device).to(torch.bfloat16).eval()
+    # ★ cls_head 保持 fp32（它本来就是 fp32 训练的）。
+    # 之前误转 bf16，把 fp32 头压成 2-3 位有效数字，决策边界附近 argmax 抖动 →
+    # 推理结果随机 + 比单样本差。fp32 头 + hidden state 升 fp32 再进头，消除头层舍入。
+    cls_head = cls_head.to(device).to(torch.float32).eval()
     print(
-        f"Rank {rank}: loaded cls_head (hidden={meta['hidden_size']}); "
+        f"Rank {rank}: loaded cls_head fp32 (hidden={meta['hidden_size']}); "
         f"label_map: 0='{meta['label_map']['0']}', 1='{meta['label_map']['1']}'"
     )
 
