@@ -63,10 +63,12 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 8))
 VIDEO_FPS = float(os.getenv("INFER_VIDEO_FPS", "8.0"))
 VIDEO_MAX_PIXELS = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "602112"))
 
-# attention 实现。flash_attention_2 在 Ascend NPU 上 reduction 顺序不固定，
-# 是 bf16 backbone 推理结果非确定的主因。需要完全可复现时设 ATTN_IMPL=eager
-# (确定但更慢/更耗显存)；追求速度且能接受边界样本偶尔翻转则保持默认。
-ATTN_IMPL = os.environ.get("ATTN_IMPL", "flash_attention_2")
+# attention 实现。★ 必须与训练时一致！LlamaFactory 默认是 sdpa，
+# cls_head 是在 sdpa 产生的 hidden state 上标定的；推理若用 flash_attention_2，
+# hidden state 数值路径不同 → 头看到分布外特征 → 精度下降 + 边界更不稳。
+# 默认 sdpa 与训练对齐；SDPA 在 NPU 上也比 FA2 更确定。
+# 需要时可 export ATTN_IMPL=eager (最确定但最慢) / flash_attention_2 (最快但偏离训练)。
+ATTN_IMPL = os.environ.get("ATTN_IMPL", "sdpa")
 
 torch.npu.config.allow_internal_format = False
 os.environ["OMP_NUM_THREADS"] = "1"
