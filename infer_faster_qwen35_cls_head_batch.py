@@ -219,15 +219,23 @@ class BatchedClsHeadInferencer:
         """NPU 工作线程调用：.to(device) → forward → cls_head → 拼结果。"""
         inputs = cpu_inputs.to(self.device)
         with torch.no_grad():
-            outputs = self.model(
-                **inputs,
-                output_hidden_states=True,
-                return_dict=True,
-                use_cache=False,
-            )
+            # ★ 关键：不要用 self.model(output_hidden_states=True) ——
+            # 那会把全部 ~37 层的 [B, T, D] hidden state 都物化保存，
+            # batch 一大直接 OOM (37 × B × T × D × 2字节，batch=12 时 ≈ 23GB)。
+            # 我们只需要最后一层，所以直接调 backbone 取 last_hidden_state，
+            # 数值上与 hidden_states[-1] 完全等价，但只物化 1 层。
+            backbone = getattr(self.model, "model", None)
+            if backbone is not None:
+                out = backbone(**inputs, return_dict=True, use_cache=False)
+                last_hidden = out.last_hidden_state                # [B, T, D] 仅最后一层
+            else:
+                # 兜底：结构不符时退回老路径 (内存重但正确)
+                out = self.model(
+                    **inputs, output_hidden_states=True,
+                    return_dict=True, use_cache=False,
+                )
+                last_hidden = out.hidden_states[-1]
 
-        # 最后一层 hidden states: [B, T, D]
-        last_hidden = outputs.hidden_states[-1]
         # left padding 下，每个样本最后一个真实 token 都在序列末尾 → [:, -1, :] 即分类特征
         h = last_hidden[:, -1, :]                                  # [B, D]
         cls_logits = self.cls_head(h.to(self.cls_head_dtype))      # [B, 2]
