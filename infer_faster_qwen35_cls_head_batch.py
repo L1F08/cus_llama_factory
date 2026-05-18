@@ -126,13 +126,19 @@ def preprocess_sample(processor, messages, video_path):
 def _collate_qwen_vl(per_sample_inputs, pad_token_id):
     """把 N 份 batch=1 的 BatchFeature 拼成 batch=N。
 
-    Qwen3.5-VL processor 输出 5 个字段：
-      - input_ids / attention_mask / mm_token_type_ids: shape [1, seq_len_i] —— 左 pad
-      - pixel_values_videos: shape [num_patches_i, 1536] —— 沿 dim 0 cat
-      - video_grid_thw: shape [num_videos_i, 3] —— 沿 dim 0 cat
+    ★ cls_head 专用：用 **right-padding**（padding 加在序列末尾）。
 
-    通用规则: 所有 shape=[1, X] 且 X 跨样本不一致的 tensor 都 left-pad；
-    其它 tensor 沿 dim 0 cat；list/标量按列表 extend。
+    原因：cls_head 只做一次 forward（非 autoregressive generate）。right-pad 下
+    因果 attention + attention_mask 保证真实 token 完全不受尾部 padding 影响，
+    每个样本真实 token 的位置与"单样本无 padding"完全一致 ——
+    结果 padding 无关 → 确定性 + 与单样本版精度对齐。
+    （left-pad 会把真实 token 整体右移 pad_len，而 Qwen3.5-VL forward() 不会
+     自动算多模态 mrope position_ids，导致结果随 batch 组成漂移、且比单样本差。）
+
+    Qwen3.5-VL processor 输出 5 个字段：
+      - input_ids / attention_mask / mm_token_type_ids: [1, seq_len_i] —— right-pad
+      - pixel_values_videos: [num_patches_i, 1536] —— 沿 dim 0 cat
+      - video_grid_thw: [num_videos_i, 3] —— 沿 dim 0 cat
     """
     from transformers.feature_extraction_utils import BatchFeature
 
@@ -165,7 +171,7 @@ def _collate_qwen_vl(per_sample_inputs, pad_token_id):
                         pad_shape = list(v.shape)
                         pad_shape[1] = field_max - cur
                         pad_t = torch.full(pad_shape, pad_val, dtype=v.dtype, device=v.device)
-                        v = torch.cat([pad_t, v], dim=1)  # left-pad
+                        v = torch.cat([v, pad_t], dim=1)  # ★ right-pad（padding 在末尾）
                     padded.append(v)
                 out[k] = torch.cat(padded, dim=0)
             else:
@@ -198,9 +204,10 @@ class BatchedClsHeadInferencer:
         self.pos_label = label_map["1"]
         self.device = device
 
-        # ★ left padding：让 batch 里每个样本的最后一个真实 token 都落在 index -1，
-        #   这样 last_hidden[:, -1, :] 一次性取出整 batch 的分类特征。
-        self.processor.tokenizer.padding_side = "left"
+        # ★ right padding：cls_head 只做一次 forward，right-pad 让每个样本真实 token
+        #   位置与单样本无 padding 完全一致 → 结果 padding 无关、确定、与单样本对齐。
+        #   (我们手写 collator 做 padding，这个设置只是保持语义一致)
+        self.processor.tokenizer.padding_side = "right"
         self.pad_id = self.processor.tokenizer.pad_token_id or self.processor.tokenizer.eos_token_id
 
     def build_inputs_cpu(self, batch, _stats=None):
@@ -236,8 +243,12 @@ class BatchedClsHeadInferencer:
                 )
                 last_hidden = out.hidden_states[-1]
 
-        # left padding 下，每个样本最后一个真实 token 都在序列末尾 → [:, -1, :] 即分类特征
-        h = last_hidden[:, -1, :]                                  # [B, D]
+        # ★ right padding 下，每个样本的最后一个真实 token 不在固定 index -1，
+        # 而在 attention_mask 求和 - 1 的位置。按样本 gather 出来。
+        attn = inputs["attention_mask"]                            # [B, T] right-pad: 1..1,0..0
+        last_idx = attn.sum(dim=1) - 1                             # [B] 每样本最后真实 token 下标
+        bsz = last_hidden.shape[0]
+        h = last_hidden[torch.arange(bsz, device=last_hidden.device), last_idx, :]  # [B, D]
         cls_logits = self.cls_head(h.to(self.cls_head_dtype))      # [B, 2]
 
         # 一次性搬到 CPU，避免逐样本 .item() 同步开销
