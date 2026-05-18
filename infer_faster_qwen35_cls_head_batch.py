@@ -63,11 +63,14 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 8))
 VIDEO_FPS = float(os.getenv("INFER_VIDEO_FPS", "8.0"))
 VIDEO_MAX_PIXELS = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "602112"))
 
-# attention 实现。★ 必须与训练时一致！LlamaFactory 默认是 sdpa，
-# cls_head 是在 sdpa 产生的 hidden state 上标定的；推理若用 flash_attention_2，
-# hidden state 数值路径不同 → 头看到分布外特征 → 精度下降 + 边界更不稳。
-# 默认 sdpa 与训练对齐；SDPA 在 NPU 上也比 FA2 更确定。
-# 需要时可 export ATTN_IMPL=eager (最确定但最慢) / flash_attention_2 (最快但偏离训练)。
+# attention 实现。★ 必须与训练时一致！
+# 说明：train_log_0507.txt 里出现的 FlashAttention-2 是**另一次**训练（那次手动
+# 开了 flash_attn:fa2），不是 cls_head 这次。cls_head 训练**没有**开 fa2，
+# LlamaFactory AUTO → transformers 默认 → sdpa。
+# 所以 cls_head 是在 **sdpa 产生的 hidden state** 上标定的，推理必须也用 sdpa，
+# 否则头看到分布外特征 → 精度下降、决策边界更不稳。
+# sdpa 在 NPU 上也比 FA2 更确定 (无 FA2 的原子加归约)。
+# 需要时可 export ATTN_IMPL=eager (最确定但最慢) 或 flash_attention_2 (偏离训练)。
 ATTN_IMPL = os.environ.get("ATTN_IMPL", "sdpa")
 
 torch.npu.config.allow_internal_format = False
