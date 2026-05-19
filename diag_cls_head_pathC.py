@@ -70,15 +70,21 @@ def prep(sample):
                      padding=False, return_tensors="pt", **(vk or {}))
 
 
-# 选两个样本：s0 是被测样本；s1 故意挑一个 input_ids 更长的，用来给 s0 制造右 padding
-inp0 = prep(samples[0])
-inp_long = None
-for s in samples[1:50]:
+# 先扫前 N 个样本拿到各自长度，挑：s0 = 较短的被测样本，dummy = 更长的样本
+# （这样 s0 在 batch=2 里会被右 padding，才能测出 padding 是否影响 s0 的结果）
+SCAN_N = 40
+prepped = []
+for s in samples[:SCAN_N]:
     c = prep(s)
-    if c["input_ids"].shape[1] > inp0["input_ids"].shape[1]:
-        inp_long = c
-        break
-print(f"s0 len={inp0['input_ids'].shape[1]}, dummy len={inp_long['input_ids'].shape[1] if inp_long else 'N/A'}")
+    prepped.append((c["input_ids"].shape[1], c))
+prepped.sort(key=lambda x: x[0])
+len_short, inp0 = prepped[0]          # 最短的当被测样本 s0
+len_long, inp_long = prepped[-1]      # 最长的当 dummy
+if len_long <= len_short:
+    inp_long = None
+print(f"扫描 {SCAN_N} 个样本：长度范围 [{prepped[0][0]} .. {prepped[-1][0]}]")
+print(f"s0(被测,最短) len={len_short}, dummy(最长) len={len_long} "
+      f"→ s0 在 batch=2 会被右 pad {max(0, len_long-len_short)} 个 token")
 
 
 def head_logits(h):
