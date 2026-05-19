@@ -156,6 +156,50 @@ def P4_toplevel_b2(a, b):
     return head_logits(h)
 
 
+def _compute_position_ids(inp):
+    """复刻 generate 的 mrope position_ids 准备。尝试多个 API，返回 (position_ids, how) 或 (None, err)。"""
+    # 优先：顶层模型的 _prepare_position_ids_for_generation (generate 内部就是它)
+    fn = getattr(model, "_prepare_position_ids_for_generation", None)
+    if fn is not None:
+        try:
+            mk = {k: v for k, v in inp.items() if k != "input_ids"}
+            pos = fn(inp["input_ids"], mk)
+            return pos, "_prepare_position_ids_for_generation"
+        except Exception as e:
+            last = f"_prepare_position_ids_for_generation failed: {e!r}"
+    else:
+        last = "_prepare_position_ids_for_generation absent"
+    # 退路：内层 get_rope_index
+    gri = getattr(getattr(model, "model", None), "get_rope_index", None) or getattr(model, "get_rope_index", None)
+    if gri is not None:
+        try:
+            res = gri(
+                inp["input_ids"],
+                image_grid_thw=inp.get("image_grid_thw"),
+                video_grid_thw=inp.get("video_grid_thw"),
+                attention_mask=inp.get("attention_mask"),
+            )
+            pos = res[0] if isinstance(res, (tuple, list)) else res
+            return pos, "get_rope_index"
+        except Exception as e:
+            last = f"{last}; get_rope_index failed: {e!r}"
+    return None, last
+
+
+def P5_inner_b2_explicit_pos(a, b):
+    """batch=2 右pad，但显式算好 mrope position_ids 再传给内层 forward，取样本 0"""
+    inp = _right_pad_pair(a, b).to(device)
+    pos, how = _compute_position_ids(inp)
+    if pos is None:
+        return None, how
+    with torch.no_grad():
+        out = model.model(**inp, position_ids=pos, return_dict=True, use_cache=False)
+    lh = out.last_hidden_state
+    last0 = inp["attention_mask"][0].sum() - 1
+    h = lh[0:1, last0, :]
+    return head_logits(h), how
+
+
 p1 = P1_toplevel_b1(inp0)
 p2 = P2_inner_b1(inp0)
 print(f"\nP1 顶层 batch=1            : {p1}")
@@ -165,23 +209,28 @@ if inp_long is not None:
     p4 = P4_toplevel_b2(inp0, inp_long)
     print(f"P3 内层 batch=2 (右pad)    : {p3}")
     print(f"P4 顶层 batch=2 (右pad)    : {p4}")
+    p5, p5how = P5_inner_b2_explicit_pos(inp0, inp_long)
+    print(f"P5 内层 b=2 右pad +显式pos : {p5}   [{p5how}]")
 else:
-    p3 = p4 = None
-    print("（前 50 个样本没找到更长的 dummy，跳过 P3/P4）")
+    p3 = p4 = p5 = None
+    print("（没找到更长的 dummy，跳过 P3/P4/P5）")
 
 
 def close(x, y, tol=1e-3):
     return x is not None and y is not None and abs(x[0][0]-y[0][0]) < tol and abs(x[0][1]-y[0][1]) < tol
 
 print("\n===== 判定 =====")
-print(f"P1==P2 (内层 vs 顶层, batch=1)  : {close(p1,p2)}")
+print(f"P1==P2 (内层 vs 顶层, batch=1)        : {close(p1,p2)}")
 if p3 is not None:
-    print(f"P1==P4 (顶层 batch 不变?)       : {close(p1,p4)}")
-    print(f"P1==P3 (内层批量 vs 基准)       : {close(p1,p3)}")
-    if close(p1,p2) and close(p1,p4) and not close(p1,p3):
-        print(">>> 证实：内层 backbone + 批 padding 是根因。修复方向：批量版改回顶层 forward，"
-              "用 hook 抓最后一层 hidden + logits_to_keep=1 避免 OOM。")
-    elif not close(p1,p2):
-        print(">>> 内层路径本身就 != 顶层。同样应改回顶层 forward。")
+    print(f"P1==P3 (右pad 是否改变结果?)         : {close(p1,p3)}  (False=右pad 确实改了)")
+    print(f"P1==P5 (显式 position_ids 能否修复?) : {close(p1,p5)}  (True=修复方向确认)")
+    if p5 is None:
+        print(">>> position_ids 计算 API 没跑通，需要换 API（看上面 [..] 里的报错）。")
+    elif close(p1, p5):
+        print(">>> ★ 确认根因+解法：forward 没传 mrope position_ids → 对 padding 敏感。"
+              "显式算好 position_ids 传入即可修复（与训练/generate 对齐）。")
+    elif not close(p1, p3):
+        print(">>> 显式 position_ids 仍没修复，padding 影响来自别处（attention_mask 处理 / "
+              "vision 融合），需进一步查。")
     else:
-        print(">>> 路径不是根因，需另查（position_ids / attention_mask 传参）。")
+        print(">>> 右pad 本身没改变结果，非确定来自别处。")
