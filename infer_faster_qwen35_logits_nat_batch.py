@@ -446,20 +446,44 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
     diag_every = 5
 
     if total > 0:
-        with ThreadPoolExecutor(max_workers=PREPROCESS_WORKERS) as executor:
-            future_to_path = {}
-            for messages, video_path in my_queue:
-                if not os.path.exists(video_path):
-                    results.append({"id": video_path, "answers": ["Error: Video not found"]})
-                    pbar.update(1)
-                    continue
-                fut = executor.submit(preprocess_sample, processor, messages, video_path)
-                future_to_path[fut] = video_path
+        from collections import deque
 
-            remaining = len(future_to_path)
-            for fut in as_completed(future_to_path):
-                video_path = future_to_path[fut]
+        # 缺失视频先记错误，其余按 my_queue 顺序处理。
+        # ★ my_queue 已在 rank 内按文件大小(≈token 长度)排序。这里**严格按提交顺序**
+        #   FIFO 消费（不再用 as_completed 的完成顺序），保证：
+        #   1) 每次运行的 batch 组成完全相同 → run-to-run 确定
+        #   2) 相邻样本长度相近 → batch 内 left-pad 极小 → 结果≈单样本
+        #   滑动窗口限制在飞的预处理数量，避免一次性持有过多 cpu_inputs 撑爆内存。
+        runnable = []
+        for messages, video_path in my_queue:
+            if not os.path.exists(video_path):
+                results.append({"id": video_path, "answers": ["Error: Video not found"]})
+                pbar.update(1)
+            else:
+                runnable.append((messages, video_path))
+
+        with ThreadPoolExecutor(max_workers=PREPROCESS_WORKERS) as executor:
+            task_iter = iter(runnable)
+            window = deque()
+            max_inflight = max(PREPROCESS_WORKERS * 2, BATCH_SIZE + PREPROCESS_WORKERS)
+
+            def _submit_next():
+                try:
+                    m, v = next(task_iter)
+                except StopIteration:
+                    return False
+                window.append((executor.submit(preprocess_sample, processor, m, v), v))
+                return True
+
+            for _ in range(max_inflight):
+                if not _submit_next():
+                    break
+
+            remaining = len(runnable)
+            while window:
+                fut, video_path = window.popleft()   # FIFO = 提交顺序 = 已排序顺序
                 remaining -= 1
+                _submit_next()                       # 补一个，维持窗口、保持顺序
                 try:
                     item = fut.result()
                 except Exception as e:
