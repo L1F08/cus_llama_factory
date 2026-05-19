@@ -86,6 +86,14 @@ print(f"扫描 {SCAN_N} 个样本：长度范围 [{prepped[0][0]} .. {prepped[-1
 print(f"s0(被测,最短) len={len_short}, dummy(最长) len={len_long} "
       f"→ s0 在 batch=2 会被右 pad {max(0, len_long-len_short)} 个 token")
 
+# 再找一个与 s0 长度**完全相同**的样本，用于 P6（零 padding 的同长拼批）
+inp_same = None
+for ln, c in prepped[1:]:
+    if ln == len_short:
+        inp_same = c
+        break
+print(f"同长 dummy: {'找到 (len=%d)' % len_short if inp_same is not None else '前40个没有同长样本，P6 跳过'}")
+
 
 def head_logits(h):
     return cls_head(h.to(hd)).float().cpu().tolist()
@@ -200,20 +208,36 @@ def P5_inner_b2_explicit_pos(a, b):
     return head_logits(h), how
 
 
+def P6_inner_b2_samelen(a, b):
+    """batch=2，两样本长度相同 → 零 padding，取样本 0"""
+    inp = _right_pad_pair(a, b).to(device)   # 同长时 _right_pad_pair 不会 pad，只 cat
+    with torch.no_grad():
+        out = model.model(**inp, return_dict=True, use_cache=False)
+    lh = out.last_hidden_state
+    last0 = inp["attention_mask"][0].sum() - 1
+    h = lh[0:1, last0, :]
+    return head_logits(h)
+
+
 p1 = P1_toplevel_b1(inp0)
 p2 = P2_inner_b1(inp0)
-print(f"\nP1 顶层 batch=1            : {p1}")
-print(f"P2 内层 batch=1            : {p2}")
+print(f"\nP1 顶层 batch=1                  : {p1}")
+print(f"P2 内层 batch=1                  : {p2}")
 if inp_long is not None:
     p3 = P3_inner_b2(inp0, inp_long)
     p4 = P4_toplevel_b2(inp0, inp_long)
-    print(f"P3 内层 batch=2 (右pad)    : {p3}")
-    print(f"P4 顶层 batch=2 (右pad)    : {p4}")
+    print(f"P3 内层 batch=2 (右pad)          : {p3}")
+    print(f"P4 顶层 batch=2 (右pad)          : {p4}")
     p5, p5how = P5_inner_b2_explicit_pos(inp0, inp_long)
-    print(f"P5 内层 b=2 右pad +显式pos : {p5}   [{p5how}]")
+    print(f"P5 内层 b=2 右pad +显式pos       : {p5}   [{p5how}]")
 else:
     p3 = p4 = p5 = None
     print("（没找到更长的 dummy，跳过 P3/P4/P5）")
+if inp_same is not None:
+    p6 = P6_inner_b2_samelen(inp0, inp_same)
+    print(f"P6 内层 batch=2 (同长,零pad)     : {p6}")
+else:
+    p6 = None
 
 
 def close(x, y, tol=1e-3):
@@ -230,7 +254,15 @@ if p3 is not None:
         print(">>> ★ 确认根因+解法：forward 没传 mrope position_ids → 对 padding 敏感。"
               "显式算好 position_ids 传入即可修复（与训练/generate 对齐）。")
     elif not close(p1, p3):
-        print(">>> 显式 position_ids 仍没修复，padding 影响来自别处（attention_mask 处理 / "
-              "vision 融合），需进一步查。")
+        print(">>> 显式 position_ids 仍没修复，确认是 padding 本身影响结果。")
     else:
         print(">>> 右pad 本身没改变结果，非确定来自别处。")
+if p6 is not None:
+    print(f"P1==P6 (同长零pad 拼批是否安全?)     : {close(p1,p6)}  "
+          f"(True=按长度分桶/零pad 即可根治)")
+    if close(p1, p6):
+        print(">>> ★ 解法确认：相同长度样本拼 batch（零 padding）与单样本 bit 一致。"
+              "把批量版改成「按精确长度分桶、桶内零 padding」即可彻底确定 + 与单样本对齐。")
+    else:
+        print(">>> 连同长零pad 拼批都变 → 是 batching 本身（非 padding）。"
+              "那只能 batch=1 跑 NPU，无法批量加速。")
