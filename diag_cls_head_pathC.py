@@ -108,13 +108,19 @@ def P2_inner_b1(cpu):
 
 
 def _right_pad_pair(a, b):
-    """把 a,b 两个 batch=1 BatchFeature 右 padding 拼成 batch=2（仿 collator）"""
+    """把 a,b 两个 batch=1 BatchFeature 右 padding 拼成 batch=2（仿 collator）。
+    注意：BatchFeature.to(device) 是原地修改，前面 P1/P2 可能已把 a 的 tensor
+    挪到 NPU。这里统一 .cpu() 后在 CPU 上拼，最后由调用方 .to(device)。"""
     from transformers.feature_extraction_utils import BatchFeature
     maxlen = max(a["input_ids"].shape[1], b["input_ids"].shape[1])
     out = {}
     keys = set(a.keys()) | set(b.keys())
     for k in keys:
         va, vb = a[k], b[k]
+        if torch.is_tensor(va):
+            va = va.cpu()
+        if torch.is_tensor(vb):
+            vb = vb.cpu()
         if torch.is_tensor(va) and va.dim() >= 2 and va.shape[0] == 1 and va.shape[1] != vb.shape[1]:
             pv = pad_id if k == "input_ids" else 0
             def rp(v):
