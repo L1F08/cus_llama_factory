@@ -32,15 +32,22 @@ MODEL_PATH = "/home/ma-user/work/lyf/outmodel/crash_1cam_2cls_train_3s_39k_0508-
 DATA_PATH = "/home/ma-user/work/lyf/data/0506_crash_1cam_2cls_test_39k_3s/test_0506_crash_1cam_2cls_test_39k_3s_front_with_ego_info_5256_3s_clipped_cleaned_dedup_4k.json"
 
 # 要扫的配置网格： (BATCH_SIZE, PREPROCESS_WORKERS)
+# 第二轮探索：上一轮发现瓶颈是 CPU 预处理(视频解码)，且 BS=16/PW=16 仍最快、未到平台。
+# 这一轮做单变量对照，找平台 + 看到底是 batch 还是 worker 绑定：
 CONFIGS = [
-    (4, 6), (4, 8),
-    (6, 8), (8, 8),
-    (12, 12), (16, 12),
-    (24, 16),
+    # 固定 PW=16，加大 BATCH —— 看 batch 还能不能继续提速 / 何时 OOM
+    (12, 16), (16, 16), (24, 16), (32, 16),
+    # 固定 BATCH=16，加大 PW —— 看 worker 是否仍是绑定资源
+    (16, 12), (16, 20), (16, 24),
+    # 高端组合
+    (24, 24), (32, 24),
 ]
-WARMUP_SAMPLES = 80     # 跳过的预热样本数（不计时）
-MEASURE_SAMPLES = 200   # 计时的样本数（越大越稳，你可调到 400+）
-LIVE_EVERY = 40         # 每处理这么多“计时样本”打一次瞬时速率
+WARMUP_SAMPLES = 60     # 跳过的预热样本数（不计时）
+MEASURE_SAMPLES = 150   # 计时样本数（这一轮调小，单配置更快出结果；要更稳可加大）
+LIVE_EVERY = 30         # 每处理这么多“计时样本”打一次瞬时速率
+# 提示：视频解码是主瓶颈。若环境装了 decord，先在 shell 里
+#   export FORCE_QWENVL_VIDEO_READER=decord
+# 再跑本脚本，大概率比调 batch/worker 收益大得多（可对比加/不加的汇总表）。
 # =============================
 
 sys.path.insert(0, SCRIPTS_DIR)
