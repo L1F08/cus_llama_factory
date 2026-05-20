@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch_npu  # noqa: F401
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
@@ -310,6 +310,139 @@ def render_visualization(attention_grid, frames, output_dir, p_safe, p_risk, vid
 
 
 # ============================================================
+# Step 6b: render overlay video (per-frame heatmap blend)
+# ============================================================
+def _make_overlay_frame(frame_pil, heatmap_norm, alpha=0.5, draw_text=None):
+    """Blend one heatmap onto one frame and optionally draw text."""
+    frame_arr = np.array(frame_pil.convert("RGB"))
+    H_img, W_img = frame_arr.shape[:2]
+
+    heatmap_img = Image.fromarray((heatmap_norm * 255).astype(np.uint8))
+    heatmap_resized = heatmap_img.resize((W_img, H_img), Image.BILINEAR)
+    heatmap_arr = np.array(heatmap_resized) / 255.0
+    heatmap_rgb = (cm.jet(heatmap_arr)[..., :3] * 255).astype(np.uint8)
+
+    overlay = (frame_arr * (1 - alpha) + heatmap_rgb * alpha).astype(np.uint8)
+
+    if draw_text:
+        pil = Image.fromarray(overlay)
+        draw = ImageDraw.Draw(pil)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+        # Draw text with black outline for visibility
+        x, y = 8, 8
+        for dx, dy in [(-1, -1), (1, -1), (-1, 1), (1, 1), (0, 0)]:
+            color = (0, 0, 0) if (dx, dy) != (0, 0) else (255, 255, 255)
+            draw.text((x + dx, y + dy), draw_text, font=font, fill=color)
+        overlay = np.array(pil)
+
+    return overlay
+
+
+def render_overlay_video(
+    attention_grid, frames, output_path, video_fps=8.0, output_fps=None,
+    temporal_patch_size=2, p_safe=None, p_risk=None, side_by_side_path=None,
+):
+    """Generate an MP4 (or GIF fallback) with attention heatmap overlaid on
+    every frame.
+
+    Args:
+        attention_grid: (T_chunks, H_m, W_m) numpy array.
+        frames: list of PIL Images (len ≈ T_chunks * temporal_patch_size).
+        output_path: where to write the overlay video.
+        video_fps: the fps the model saw (for chunk alignment).
+        output_fps: playback fps. Defaults to half of video_fps for clarity.
+        side_by_side_path: if given, also write a (original | overlay) video.
+    Returns:
+        actual_output_path (str) — might be .gif if MP4 codec unavailable.
+    """
+    if output_fps is None:
+        output_fps = max(4.0, video_fps / 2.0)
+
+    T_chunks = attention_grid.shape[0]
+    a_min, a_max = attention_grid.min(), attention_grid.max()
+    norm_attn = (attention_grid - a_min) / (a_max - a_min + 1e-8)
+
+    overlay_frames = []
+    side_by_side_frames = []
+
+    header = ""
+    if p_safe is not None and p_risk is not None:
+        pred = "高风险" if p_risk > p_safe else "安全"
+        header = f"P(safe)={p_safe:.3f} P(risk)={p_risk:.3f} → {pred}"
+
+    n_frames = len(frames)
+    for frame_idx in range(n_frames):
+        frame = frames[frame_idx]
+        chunk_idx = min(frame_idx // temporal_patch_size, T_chunks - 1)
+        heatmap = norm_attn[chunk_idx]
+
+        text = f"frame {frame_idx}/{n_frames}  chunk {chunk_idx}/{T_chunks}"
+        if header:
+            text = header + "\n" + text
+
+        overlay = _make_overlay_frame(frame, heatmap, alpha=0.5, draw_text=text)
+        overlay_frames.append(overlay)
+
+        if side_by_side_path is not None:
+            orig_arr = np.array(frame.convert("RGB"))
+            # ensure same height
+            if orig_arr.shape[:2] != overlay.shape[:2]:
+                orig_pil_resized = frame.resize(
+                    (overlay.shape[1], overlay.shape[0]), Image.BILINEAR
+                )
+                orig_arr = np.array(orig_pil_resized.convert("RGB"))
+            side = np.concatenate([orig_arr, overlay], axis=1)
+            side_by_side_frames.append(side)
+
+    # Write MP4(s)
+    final_overlay_path = _write_video(overlay_frames, output_path, output_fps)
+    side_final = None
+    if side_by_side_path is not None:
+        side_final = _write_video(side_by_side_frames, side_by_side_path, output_fps)
+    return final_overlay_path, side_final
+
+
+def _write_video(frame_arrays, out_path, fps):
+    """Write a list of (H, W, 3) uint8 arrays as MP4 (libx264) with imageio.
+    Falls back to GIF if MP4 encoding fails or imageio isn't available.
+    """
+    out_path = str(out_path)
+    # Try imageio + ffmpeg first (best quality, smallest file)
+    try:
+        import imageio
+        try:
+            with imageio.get_writer(
+                out_path, fps=fps, codec="libx264", quality=8,
+                macro_block_size=None,  # avoid auto-resize warning
+            ) as writer:
+                for f in frame_arrays:
+                    writer.append_data(f)
+            print(f"  Wrote MP4: {out_path}  ({len(frame_arrays)} frames @ {fps} fps)")
+            return out_path
+        except Exception as e:
+            print(f"  MP4 codec failed ({e}), falling back to GIF")
+    except ImportError:
+        print(f"  imageio not installed, falling back to GIF (pip install imageio[ffmpeg] for MP4)")
+
+    # Fallback: GIF via PIL
+    gif_path = out_path.rsplit(".", 1)[0] + ".gif"
+    pil_frames = [Image.fromarray(f) for f in frame_arrays]
+    pil_frames[0].save(
+        gif_path,
+        save_all=True,
+        append_images=pil_frames[1:],
+        duration=int(1000 / fps),
+        loop=0,
+        optimize=False,
+    )
+    print(f"  Wrote GIF: {gif_path}  ({len(frame_arrays)} frames @ {fps} fps)")
+    return gif_path
+
+
+# ============================================================
 # Step 7: get cls predictions for the label in the title
 # ============================================================
 @torch.no_grad()
@@ -347,6 +480,15 @@ def main():
                         help="How many of the deepest full-attention layers to average over.")
     parser.add_argument("--vision_start_id", type=int, default=248053)
     parser.add_argument("--vision_end_id", type=int, default=248054)
+    parser.add_argument("--write_video", action="store_true", default=True,
+                        help="Also write overlay.mp4 (per-frame heatmap blend).")
+    parser.add_argument("--no_video", dest="write_video", action="store_false",
+                        help="Skip MP4 generation (only produce overlay.png grid).")
+    parser.add_argument("--side_by_side", action="store_true", default=True,
+                        help="Also write side_by_side.mp4 (original | overlay).")
+    parser.add_argument("--no_side_by_side", dest="side_by_side", action="store_false")
+    parser.add_argument("--output_fps", type=float, default=None,
+                        help="Playback fps for output videos. Defaults to video_fps/2.")
     args = parser.parse_args()
 
     torch.npu.set_device(args.device)
@@ -401,11 +543,27 @@ def main():
     frames = extract_frames_from_video_input(video_inputs)
     print(f"  Got {len(frames)} frames")
 
-    # 8. Render
-    print(f"\nRendering visualization to {args.output_dir}/")
+    # 8. Render image grid
+    print(f"\nRendering image grid to {args.output_dir}/")
     render_visualization(
         attention_grid, frames, args.output_dir, p_safe, p_risk, args.video,
     )
+
+    # 8b. Render overlay videos (MP4 / GIF fallback)
+    if args.write_video:
+        print(f"\nRendering overlay video(s)...")
+        overlay_path = Path(args.output_dir) / "overlay.mp4"
+        side_path = Path(args.output_dir) / "side_by_side.mp4" if args.side_by_side else None
+        render_overlay_video(
+            attention_grid, frames,
+            output_path=str(overlay_path),
+            video_fps=args.video_fps,
+            output_fps=args.output_fps,
+            temporal_patch_size=2,
+            p_safe=p_safe,
+            p_risk=p_risk,
+            side_by_side_path=str(side_path) if side_path else None,
+        )
 
     # 9. Save metadata
     meta = {
