@@ -128,6 +128,16 @@ def run_sft(
         )
         device = next(base_model.parameters()).device
         head.to(device)
+
+        # CRITICAL: mirror init_adapter's fp32 upcast for trainable params.
+        # cls_head was attached AFTER init_adapter ran, so it stays in bf16
+        # by default. Training trainable params in bf16 causes Adam updates
+        # (~lr * grad ≈ 1e-5) to underflow → cls_head never actually learns.
+        if not finetuning_args.pure_bf16 and not finetuning_args.use_badam:
+            for p in head.parameters():
+                p.data = p.data.to(torch.float32)
+            logger.info_rank0("Upcasted cls_head params to float32 (mirrors init_adapter).")
+
         logger.info_rank0(
             "Attached BinaryClassificationHead: hidden={}, params={:,}".format(
                 hidden_size, sum(p.numel() for p in head.parameters())

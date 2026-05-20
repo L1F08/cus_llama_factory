@@ -77,6 +77,12 @@ class ModelPool:
                 add_generation_prompt=True,
                 enable_thinking=False,
             )
+            # CRITICAL: even with enable_thinking=False, the Qwen3.5 chat_template.jinja
+            # still inserts an empty "<think>\n\n</think>\n\n" block after assistant tag.
+            # The training template (qwen3_5_nothink) does NOT add this block, so the
+            # hidden state position at the answer differs by 5 tokens. Strip it here
+            # to make inference prompts align with training.
+            text = text.replace("<think>\n\n</think>\n\n", "")
 
             image_inputs, video_inputs, video_kwargs = process_vision_info(
                 messages,
@@ -142,12 +148,14 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
     device = f"npu:{rank}"
     torch.npu.set_device(device)
 
-    print(f"Rank {rank}: loading merged Qwen3.5 model from {model_args.model_id}")
+    # Attention backend: default SDPA (works on NPU); override via INFER_ATTN_IMPL=flash_attention_2 / eager
+    attn_impl = os.getenv("INFER_ATTN_IMPL", "sdpa")
+    print(f"Rank {rank}: loading merged Qwen3.5 model from {model_args.model_id} (attn={attn_impl})")
     model = TargetVLModel.from_pretrained(
         model_args.model_id,
         torch_dtype="auto",
         device_map=None,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
     ).eval().to(device)
 
     processor = AutoProcessor.from_pretrained(model_args.model_id)
@@ -176,9 +184,10 @@ def main_worker(rank, world_size, model_args, data_args, training_args):
         f"label_map: 0='{meta['label_map']['0']}', 1='{meta['label_map']['1']}'"
     )
 
-    # Optional: read video params from training_args / env if you exposed them; default matches v2
+    # IMPORTANT: video params MUST match training, else ViT pos_embed (size 2304) is exceeded
+    # and hidden states drift OOD. Default 589824 = 768×768 = exactly 2304 patches per frame.
     video_fps = float(os.getenv("INFER_VIDEO_FPS", "8.0"))
-    video_max_pixels = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "602112"))
+    video_max_pixels = int(os.getenv("INFER_VIDEO_MAX_PIXELS", "589824"))
 
     model_pool = ModelPool(
         model, processor, cls_head, meta["label_map"], device,
