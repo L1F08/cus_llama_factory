@@ -128,15 +128,29 @@ def find_visual_token_indices(input_ids, video_pad_id=248057,
 # Step 3: forward + extract attention from last token to visual tokens
 # ============================================================
 @torch.no_grad()
-def extract_visual_attention(model, inputs, visual_indices, last_n_layers=4):
-    """Run forward with output_attentions=True, return mean attention from the
-    LAST input position to each visual token, aggregated over the last N
-    full_attention layers and over heads.
+def extract_visual_attention(
+    model, inputs, visual_indices,
+    layer_selection="last_4",
+    head_selection="mean",
+    query_position=-1,
+    return_per_layer=False,
+):
+    """Run forward with output_attentions=True, return attention from query
+    position(s) to each visual token, with configurable aggregation.
 
     Args:
-        visual_indices: 1D LongTensor of positions of visual tokens in input_ids
-                        (returned by find_visual_token_indices).
-    Returns: tensor of shape [num_visual_tokens]
+        visual_indices: 1D LongTensor of visual token positions in input_ids.
+        layer_selection: one of "last_4", "first_4", "middle_4", "all", or a
+                         comma-separated list of indices (in the full_attn list,
+                         0-7 for Qwen3.5).
+        head_selection: "mean" (avg) | "max" (per-token max across heads) | int (specific head index)
+        query_position: int (single position, -1 = last) or "text_avg"
+                        (average over all non-visual positions in last 50 tokens)
+        return_per_layer: if True, also return dict {layer_idx: scores} for inspection.
+
+    Returns:
+        attention_scores: [num_visual_tokens] aggregated
+        per_layer_dict: {layer_idx (original LLM index): scores} if return_per_layer else None
     """
     outputs = model(
         **inputs,
@@ -144,36 +158,75 @@ def extract_visual_attention(model, inputs, visual_indices, last_n_layers=4):
         return_dict=True,
         use_cache=False,
     )
-    # outputs.attentions is a tuple of length num_layers
-    # each element is None (for linear_attention) or [B, H, T, T] (for full_attention)
     full_attn_layers = []
     for i, attn in enumerate(outputs.attentions):
         if attn is not None and attn.dim() == 4:
             full_attn_layers.append((i, attn))
-    print(f"  Got {len(full_attn_layers)} full-attention layers out of {len(outputs.attentions)}")
-
+    print(f"  Got {len(full_attn_layers)} full-attention layers")
     if not full_attn_layers:
-        raise RuntimeError("No usable attention weights returned. Model may be using SDPA/FA2 despite eager request.")
+        raise RuntimeError("No usable attention weights returned. Did you set attn_implementation='eager'?")
 
-    # Take last N full-attention layers (deeper layers carry more semantic info)
-    selected = full_attn_layers[-last_n_layers:]
-    print(f"  Aggregating over layers: {[i for i, _ in selected]}")
+    # Select layers
+    n_total = len(full_attn_layers)
+    if layer_selection == "all":
+        selected_idx = list(range(n_total))
+    elif layer_selection == "last_4":
+        selected_idx = list(range(max(0, n_total - 4), n_total))
+    elif layer_selection == "first_4":
+        selected_idx = list(range(min(4, n_total)))
+    elif layer_selection == "middle_4":
+        mid = n_total // 2
+        selected_idx = list(range(max(0, mid - 2), min(n_total, mid + 2)))
+    else:
+        selected_idx = [int(x) for x in layer_selection.split(",")]
+    selected = [full_attn_layers[i] for i in selected_idx]
+    print(f"  Selected layer (within full_attn list): {selected_idx} "
+          f"→ original LLM layer indices: {[i for i, _ in selected]}")
 
-    # For each, extract attention from LAST query position to visual tokens
-    per_layer_attn = []
-    last_q_pos = -1  # last input token's attention
+    # Build query position tensor
+    seq_len = full_attn_layers[0][1].size(-1)
+    if query_position == "text_avg":
+        # Average over the last 50 non-visual positions
+        is_visual = torch.zeros(seq_len, dtype=torch.bool)
+        is_visual[visual_indices.cpu()] = True
+        non_visual_pos = torch.where(~is_visual)[0]
+        q_positions = non_visual_pos[-50:].tolist()
+        print(f"  Query positions: text_avg over {len(q_positions)} positions {q_positions[0]}..{q_positions[-1]}")
+    else:
+        q_pos = int(query_position) if query_position != -1 else seq_len - 1
+        if q_pos < 0:
+            q_pos = seq_len + q_pos
+        q_positions = [q_pos]
+        print(f"  Query position: {q_pos} (token id = {inputs.input_ids[0, q_pos].item()})")
+
+    # Extract per-layer attention to visual tokens
     visual_indices_device = visual_indices.to(selected[0][1].device)
+    per_layer_dict = {}
+    per_layer_attn = []
     for layer_idx, attn in selected:
-        # attn shape: [B=1, num_heads, T, T]
-        # Use advanced indexing with visual_indices (scattered positions, not a slice)
-        a = attn[0, :, last_q_pos, visual_indices_device]  # [num_heads, num_visual]
-        a_mean_heads = a.float().mean(dim=0)  # [num_visual]
-        per_layer_attn.append(a_mean_heads)
-        del attn  # free memory
+        # attn shape: [1, H, T, T]
+        # Gather attention from each query position to all visual tokens
+        # Result: [H, num_q, num_visual]
+        a = attn[0, :, q_positions, :][:, :, visual_indices_device]  # [H, len(q_positions), num_visual]
+        a = a.float().mean(dim=1)  # avg over query positions → [H, num_visual]
 
-    # Average over selected layers
-    attention_scores = torch.stack(per_layer_attn, dim=0).mean(dim=0)  # [num_visual]
-    return attention_scores
+        # Aggregate heads
+        if head_selection == "mean":
+            a_agg = a.mean(dim=0)
+        elif head_selection == "max":
+            a_agg = a.max(dim=0).values
+        elif isinstance(head_selection, int) or head_selection.isdigit():
+            head_i = int(head_selection)
+            a_agg = a[head_i]
+        else:
+            a_agg = a.mean(dim=0)
+
+        per_layer_attn.append(a_agg)
+        per_layer_dict[layer_idx] = a_agg.cpu()
+        del attn
+
+    attention_scores = torch.stack(per_layer_attn, dim=0).mean(dim=0)
+    return attention_scores, (per_layer_dict if return_per_layer else None)
 
 
 # ============================================================
@@ -477,7 +530,18 @@ def main():
     parser.add_argument("--video_max_pixels", type=int, default=589824)
     parser.add_argument("--device", default="npu:0")
     parser.add_argument("--last_n_layers", type=int, default=4,
-                        help="How many of the deepest full-attention layers to average over.")
+                        help="(legacy) Kept for backward-compat. Use --layer_selection for finer control.")
+    parser.add_argument("--layer_selection", type=str, default="last_4",
+                        help="Layers to aggregate: 'last_4', 'first_4', 'middle_4', 'all', "
+                             "or comma-separated indices (0-based within full_attn list, e.g. '0,2,5').")
+    parser.add_argument("--head_selection", type=str, default="mean",
+                        help="How to aggregate heads: 'mean' | 'max' | <int> for a specific head index (0-15).")
+    parser.add_argument("--query_position", type=str, default="-1",
+                        help="Which query position to read attention from: integer (default -1 = last), "
+                             "or 'text_avg' to average over the last 50 non-visual positions.")
+    parser.add_argument("--per_layer_viz", action="store_true",
+                        help="Also save one overlay grid per selected layer (for diagnosing which layer "
+                             "actually localizes objects). Output goes to <out>/per_layer/.")
     parser.add_argument("--vision_start_id", type=int, default=248053)
     parser.add_argument("--vision_end_id", type=int, default=248054)
     parser.add_argument("--write_video", action="store_true", default=True,
@@ -524,10 +588,14 @@ def main():
     pred = "高风险" if p_risk > p_safe else "安全"
     print(f"  Prediction: {pred}")
 
-    # 5. Extract attention
+    # 5. Extract attention (with optional per-layer breakdown)
     print(f"\nRunning attention-extraction forward...")
-    attention_scores = extract_visual_attention(
-        model, inputs, visual_indices, last_n_layers=args.last_n_layers,
+    attention_scores, per_layer_dict = extract_visual_attention(
+        model, inputs, visual_indices,
+        layer_selection=args.layer_selection,
+        head_selection=args.head_selection,
+        query_position=args.query_position,
+        return_per_layer=args.per_layer_viz,
     )
     print(f"  Attention scores shape: {attention_scores.shape}")
     print(f"  Attention range: min={attention_scores.min():.6f}, "
@@ -548,6 +616,20 @@ def main():
     render_visualization(
         attention_grid, frames, args.output_dir, p_safe, p_risk, args.video,
     )
+
+    # 8a-bis. If --per_layer_viz, also save individual layer overlays
+    if per_layer_dict is not None:
+        per_layer_dir = Path(args.output_dir) / "per_layer"
+        per_layer_dir.mkdir(exist_ok=True)
+        print(f"\nRendering per-layer overlays to {per_layer_dir}/")
+        for llm_layer_idx, layer_scores in per_layer_dict.items():
+            layer_grid = reshape_attention_to_grid(layer_scores, inputs.video_grid_thw[0])
+            render_visualization(
+                layer_grid, frames,
+                str(per_layer_dir / f"layer_{llm_layer_idx:02d}"),
+                p_safe, p_risk,
+                args.video + f"  [layer {llm_layer_idx}]",
+            )
 
     # 8b. Render overlay videos (MP4 / GIF fallback)
     if args.write_video:
