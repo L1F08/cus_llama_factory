@@ -97,28 +97,45 @@ def build_inputs(processor, video_path, prompt, video_fps, video_max_pixels, dev
     return inputs, video_inputs
 
 
-def find_visual_token_range(input_ids, vision_start_id, vision_end_id):
-    """Find [start, end) range of visual tokens in the input sequence."""
-    start_positions = (input_ids == vision_start_id).nonzero(as_tuple=True)[0]
-    end_positions = (input_ids == vision_end_id).nonzero(as_tuple=True)[0]
-    if len(start_positions) == 0 or len(end_positions) == 0:
+def find_visual_token_indices(input_ids, video_pad_id=248057,
+                              vision_start_id=248053, vision_end_id=248054):
+    """Return tensor of ALL visual token positions in the input sequence.
+
+    Qwen3.5-VL wraps each temporal chunk with its own <|vision_start|>...
+    <|video_pad|>×N...<|vision_end|> block (multiple wrappers per video).
+    Don't rely on the first vision_start/end pair — directly collect all
+    <|video_pad|> token positions, which IS the canonical visual content.
+    """
+    visual_indices = (input_ids == video_pad_id).nonzero(as_tuple=True)[0]
+
+    # Debug print
+    n_starts = (input_ids == vision_start_id).sum().item()
+    n_ends = (input_ids == vision_end_id).sum().item()
+    n_video_pads = visual_indices.numel()
+    print(f"  Special tokens found: vision_start×{n_starts}, vision_end×{n_ends}, "
+          f"video_pad×{n_video_pads}")
+
+    if n_video_pads == 0:
         raise RuntimeError(
-            f"Could not find vision tokens. start_id={vision_start_id}, end_id={vision_end_id}. "
-            f"Available special tokens in input: {input_ids[input_ids >= 248000].tolist()[:20]}"
+            f"No <|video_pad|> (id={video_pad_id}) tokens found. "
+            f"Available high-id tokens in input: "
+            f"{torch.unique(input_ids[input_ids >= 248000]).tolist()}"
         )
-    # visual content sits BETWEEN <|vision_start|> and <|vision_end|>
-    return int(start_positions[0].item()) + 1, int(end_positions[0].item())
+    return visual_indices
 
 
 # ============================================================
 # Step 3: forward + extract attention from last token to visual tokens
 # ============================================================
 @torch.no_grad()
-def extract_visual_attention(model, inputs, visual_token_start, visual_token_end, last_n_layers=4):
+def extract_visual_attention(model, inputs, visual_indices, last_n_layers=4):
     """Run forward with output_attentions=True, return mean attention from the
     LAST input position to each visual token, aggregated over the last N
     full_attention layers and over heads.
 
+    Args:
+        visual_indices: 1D LongTensor of positions of visual tokens in input_ids
+                        (returned by find_visual_token_indices).
     Returns: tensor of shape [num_visual_tokens]
     """
     outputs = model(
@@ -145,10 +162,11 @@ def extract_visual_attention(model, inputs, visual_token_start, visual_token_end
     # For each, extract attention from LAST query position to visual tokens
     per_layer_attn = []
     last_q_pos = -1  # last input token's attention
+    visual_indices_device = visual_indices.to(selected[0][1].device)
     for layer_idx, attn in selected:
         # attn shape: [B=1, num_heads, T, T]
-        # [0, :, last_q_pos, visual_token_start:visual_token_end]
-        a = attn[0, :, last_q_pos, visual_token_start:visual_token_end]  # [num_heads, num_visual]
+        # Use advanced indexing with visual_indices (scattered positions, not a slice)
+        a = attn[0, :, last_q_pos, visual_indices_device]  # [num_heads, num_visual]
         a_mean_heads = a.float().mean(dim=0)  # [num_visual]
         per_layer_attn.append(a_mean_heads)
         del attn  # free memory
@@ -347,9 +365,15 @@ def main():
     print(f"  Total input tokens: {input_ids.size(0)}")
     print(f"  video_grid_thw: {inputs.video_grid_thw.tolist()}")
 
-    # 3. Find visual token range
-    vstart, vend = find_visual_token_range(input_ids, args.vision_start_id, args.vision_end_id)
-    print(f"  Visual tokens: positions [{vstart}, {vend}) = {vend - vstart} tokens")
+    # 3. Find visual token positions (NOT a contiguous range — see fn docstring)
+    visual_indices = find_visual_token_indices(
+        input_ids,
+        video_pad_id=248057,
+        vision_start_id=args.vision_start_id,
+        vision_end_id=args.vision_end_id,
+    )
+    print(f"  Visual tokens total: {visual_indices.numel()}  "
+          f"(span [{visual_indices[0].item()}..{visual_indices[-1].item()}])")
 
     # 4. Get predictions (forward pass without attention, fast)
     print(f"\nRunning prediction forward...")
@@ -361,7 +385,7 @@ def main():
     # 5. Extract attention
     print(f"\nRunning attention-extraction forward...")
     attention_scores = extract_visual_attention(
-        model, inputs, vstart, vend, last_n_layers=args.last_n_layers,
+        model, inputs, visual_indices, last_n_layers=args.last_n_layers,
     )
     print(f"  Attention scores shape: {attention_scores.shape}")
     print(f"  Attention range: min={attention_scores.min():.6f}, "
@@ -390,7 +414,7 @@ def main():
         "p_risk": p_risk,
         "prediction": pred,
         "video_grid_thw": inputs.video_grid_thw[0].tolist(),
-        "num_visual_tokens": int(vend - vstart),
+        "num_visual_tokens": int(visual_indices.numel()),
         "total_tokens": int(input_ids.size(0)),
         "attention_layers_used": args.last_n_layers,
     }
