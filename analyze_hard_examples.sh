@@ -16,6 +16,7 @@
 #   BORDERLINE_BAND   |P-0.5|<此 → borderline  (默认 0.15 → P∈0.35~0.65)
 #   HIGH_CONF_BAND    |P-0.5|>=此 → 高置信      (默认 0.4  → P<0.1 或 >0.9)
 #   OVERSAMPLE_FACTOR >1 时生成 原集 + hard×(f-1) 的增强训练集 (默认 0=不生成)
+#   SUSPECT_VIDEO_DIR 把疑似标签噪声的视频复制到此目录，方便人工抽查
 #
 # 不需要 NPU / torch —— 纯 numpy-free Python（只用标准库）。
 
@@ -37,6 +38,13 @@ BORDERLINE_BAND=${BORDERLINE_BAND:-0.15}
 HIGH_CONF_BAND=${HIGH_CONF_BAND:-0.4}
 OVERSAMPLE_FACTOR=${OVERSAMPLE_FACTOR:-0}
 
+# 疑似标签噪声视频的复制目标目录（在下面 mkdir 新建）
+SUSPECT_VIDEO_DIR=${SUSPECT_VIDEO_DIR:-/home/ma-user/work/lyf/hard_examples/suspect_videos}
+
+####################### 新建目录 #######################
+mkdir -p ${OUT_DIR}
+mkdir -p ${SUSPECT_VIDEO_DIR}        # 新建疑似噪声视频目录
+
 ####################### 日志 #######################
 log_dir=/home/ma-user/work/lyf/log_dir
 mkdir -p ${log_dir}
@@ -53,6 +61,7 @@ echo "  threshold:        ${THRESHOLD}"
 echo "  borderline_band:  ${BORDERLINE_BAND}"
 echo "  high_conf_band:   ${HIGH_CONF_BAND}"
 echo "  oversample:       ${OVERSAMPLE_FACTOR}"
+echo "  suspect_vid_dir:  ${SUSPECT_VIDEO_DIR}"
 echo "  log:              ${log_file}"
 echo "=================================================="
 
@@ -77,6 +86,7 @@ python ${SCRIPT} \
     --borderline_band ${BORDERLINE_BAND} \
     --high_conf_band ${HIGH_CONF_BAND} \
     --oversample_factor ${OVERSAMPLE_FACTOR} \
+    --suspect_video_dir ${SUSPECT_VIDEO_DIR} \
     2>&1 | tee ${log_file}
 
 ln -sf ${log_file} ${log_dir}/hard_examples_latest.log

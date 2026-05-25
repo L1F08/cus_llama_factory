@@ -29,12 +29,17 @@ so they are directly trainable):
     suspect_label_noise.json 高置信度错误（疑似标签噪声）—— 先人工抽查，勿盲目训练
     augmented_train.json     (可选) 原训练集 + hard_all × K，用于增强训练
     per_sample.csv           每条样本的 id/label/P/loss/category，便于自定义分析
+
+可选：--suspect_video_dir 会把 suspect_label_noise 里的视频原文件复制到指定
+目录，方便直接观看抽查（判断是真·难例还是标注错误）。
 """
 
 import argparse
 import csv
 import json
 import math
+import os
+import shutil
 from pathlib import Path
 
 EPS = 1e-12
@@ -220,8 +225,30 @@ def dump_json(samples, path):
     print(f"  ↳ {path}  ({len(samples)} samples)")
 
 
+def copy_videos(samples, dest_dir):
+    """Copy each sample's video (raw_sample['videos'][0]) into dest_dir."""
+    os.makedirs(dest_dir, exist_ok=True)
+    copied, missing, failed = 0, 0, 0
+    for s in samples:
+        videos = s["raw_sample"].get("videos") or []
+        if not videos:
+            continue
+        src = videos[0]
+        if not os.path.exists(src):
+            missing += 1
+            continue
+        try:
+            shutil.copy2(src, dest_dir)
+            copied += 1
+        except Exception as e:
+            failed += 1
+            print(f"  ❌ copy failed [{Path(src).name}]: {e}")
+    print(f"  ↳ copied {copied} suspect videos to {dest_dir} "
+          f"(missing {missing}, failed {failed})")
+
+
 def export_hard_sets(rows, out_dir, borderline_band, high_conf_band,
-                     oversample_factor):
+                     oversample_factor, suspect_video_dir=None):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -251,6 +278,10 @@ def export_hard_sets(rows, out_dir, borderline_band, high_conf_band,
     dump_json(hard_all, out / "hard_all.json")
     dump_json(sorted(suspect, key=lambda r: -r["ce_loss"]),
               out / "suspect_label_noise.json")
+
+    # copy suspect videos out for manual spot-check
+    if suspect_video_dir:
+        copy_videos(sorted(suspect, key=lambda r: -r["ce_loss"]), suspect_video_dir)
 
     # per-sample CSV
     csv_path = out / "per_sample.csv"
@@ -299,6 +330,8 @@ def main():
                     help="|P-0.5| >= this → high confidence (default 0.4 → P<0.1 or >0.9)")
     ap.add_argument("--oversample_factor", type=int, default=0,
                     help="If >1, emit augmented_train manifest = orig + hard_all×(factor-1)")
+    ap.add_argument("--suspect_video_dir", default=None,
+                    help="If set, copy suspect_label_noise videos into this dir for manual review")
     args = ap.parse_args()
 
     preds = load_predictions(args.pred)
@@ -307,7 +340,8 @@ def main():
                    args.borderline_band, args.high_conf_band)
     print_summary(rows, args.threshold)
     export_hard_sets(rows, args.out_dir, args.borderline_band,
-                     args.high_conf_band, args.oversample_factor)
+                     args.high_conf_band, args.oversample_factor,
+                     suspect_video_dir=args.suspect_video_dir)
 
 
 if __name__ == "__main__":
