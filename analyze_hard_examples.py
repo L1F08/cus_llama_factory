@@ -26,12 +26,15 @@ so they are directly trainable):
     hard_fp.json            真实安全但被预测为高风险（误报）—— FP
     borderline.json         模型不确定的样本 (|P-0.5| < --borderline_band)
     hard_all.json           借鉴 OHEM：borderline ∪ 所有错例（去重，去掉疑似噪声）
-    suspect_label_noise.json 高置信度错误（疑似标签噪声）—— 先人工抽查，勿盲目训练
+    suspect_label0_safe.json  高置信度错误中、原标签=安全(0) 的（模型→高风险）
+    suspect_label1_risk.json  高置信度错误中、原标签=高风险(1) 的（模型→安全, ≈FN）
     augmented_train.json     (可选) 原训练集 + hard_all × K，用于增强训练
     per_sample.csv           每条样本的 id/label/P/loss/category，便于自定义分析
 
-可选：--suspect_video_dir 会把 suspect_label_noise 里的视频原文件复制到指定
-目录，方便直接观看抽查（判断是真·难例还是标注错误）。
+可选：--suspect_video_dir 会把疑似标签噪声的视频原文件，按原标签分两个子目录
+复制出来，方便直接观看抽查（判断是真·难例还是标注错误）：
+    <suspect_video_dir>/label0_safe/   原标签安全、模型误判高风险
+    <suspect_video_dir>/label1_risk/   原标签高风险、模型误判安全（≈FN）
 """
 
 import argparse
@@ -276,12 +279,21 @@ def export_hard_sets(rows, out_dir, borderline_band, high_conf_band,
     dump_json(sorted(fp, key=lambda r: -r["ce_loss"]), out / "hard_fp.json")
     dump_json(sorted(borderline, key=lambda r: -r["ce_loss"]), out / "borderline.json")
     dump_json(hard_all, out / "hard_all.json")
-    dump_json(sorted(suspect, key=lambda r: -r["ce_loss"]),
-              out / "suspect_label_noise.json")
 
-    # copy suspect videos out for manual spot-check
+    # split suspected label-noise by ORIGINAL label for separate review
+    #   label 0 (安全):   标注为安全，但模型高置信预测高风险
+    #   label 1 (高风险): 标注为高风险，但模型高置信预测安全 —— 对应 FN，最危险
+    suspect_l0 = sorted([r for r in suspect if r["label"] == 0],
+                        key=lambda r: -r["ce_loss"])
+    suspect_l1 = sorted([r for r in suspect if r["label"] == 1],
+                        key=lambda r: -r["ce_loss"])
+    dump_json(suspect_l0, out / "suspect_label0_safe.json")
+    dump_json(suspect_l1, out / "suspect_label1_risk.json")
+
+    # copy suspect videos out for manual spot-check, split by original label
     if suspect_video_dir:
-        copy_videos(sorted(suspect, key=lambda r: -r["ce_loss"]), suspect_video_dir)
+        copy_videos(suspect_l0, os.path.join(suspect_video_dir, "label0_safe"))
+        copy_videos(suspect_l1, os.path.join(suspect_video_dir, "label1_risk"))
 
     # per-sample CSV
     csv_path = out / "per_sample.csv"
@@ -311,7 +323,8 @@ def export_hard_sets(rows, out_dir, borderline_band, high_conf_band,
     print(f"    FP (误报):                    {len(fp)}")
     print(f"    Borderline (模型不确定):      {len(borderline)}")
     print(f"    hard_all (训练增强用, 去噪后): {len(hard_all)}")
-    print(f"    suspect_label_noise (先抽查): {len(suspect)}")
+    print(f"    suspect 原标签0-安全 (模型→高风险): {len(suspect_l0)}")
+    print(f"    suspect 原标签1-高风险 (模型→安全, ≈FN): {len(suspect_l1)}")
     print("=" * 78)
 
 
