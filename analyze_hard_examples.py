@@ -228,19 +228,6 @@ def dump_json(samples, path):
     print(f"  ↳ {path}  ({len(samples)} samples)")
 
 
-VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
-
-
-def scan_video_stems(root_dir):
-    """Recursively collect video-file stems under root_dir (for exclusion)."""
-    stems = set()
-    for dirpath, _, filenames in os.walk(root_dir):
-        for fn in filenames:
-            if Path(fn).suffix.lower() in VIDEO_EXTS:
-                stems.add(Path(fn).stem)
-    return stems
-
-
 def copy_videos(samples, dest_dir):
     """Copy each sample's video (raw_sample['videos'][0]) into dest_dir."""
     os.makedirs(dest_dir, exist_ok=True)
@@ -259,36 +246,17 @@ def copy_videos(samples, dest_dir):
         except Exception as e:
             failed += 1
             print(f"  ❌ copy failed [{Path(src).name}]: {e}")
-    print(f"  ↳ copied {copied} videos to {dest_dir} "
+    print(f"  ↳ copied {copied} suspect videos to {dest_dir} "
           f"(missing {missing}, failed {failed})")
 
 
 def export_hard_sets(rows, out_dir, borderline_band, high_conf_band,
-                     oversample_factor, suspect_video_dir=None,
-                     copy_fn_dir=None, copy_fp_dir=None,
-                     exclude_reviewed_stems=None):
+                     oversample_factor, suspect_video_dir=None):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     fn = [r for r in rows if r["conf_cat"] == "FN"]
     fp = [r for r in rows if r["conf_cat"] == "FP"]
-
-    # copy FN / FP videos for manual review, excluding already-reviewed stems
-    excl = exclude_reviewed_stems or set()
-
-    def _copy_for_review(items, dest_dir, name):
-        ordered = sorted(items, key=lambda r: -r["ce_loss"])
-        to_copy = [r for r in ordered if r["stem"] not in excl]
-        skipped = len(ordered) - len(to_copy)
-        print(f"\n  Copying {name} videos for review: {len(ordered)} total"
-              f"{f', {skipped} already-reviewed excluded' if excl else ''}"
-              f" → copying {len(to_copy)}")
-        copy_videos(to_copy, dest_dir)
-
-    if copy_fn_dir:
-        _copy_for_review(fn, copy_fn_dir, "hard_fn")
-    if copy_fp_dir:
-        _copy_for_review(fp, copy_fp_dir, "hard_fp")
     borderline = [r for r in rows if r["band"] == "borderline"]
     # suspect label noise = wrong AND very confident
     suspect = [r for r in rows
@@ -377,13 +345,6 @@ def main():
                     help="If >1, emit augmented_train manifest = orig + hard_all×(factor-1)")
     ap.add_argument("--suspect_video_dir", default=None,
                     help="If set, copy suspect_label_noise videos into this dir for manual review")
-    ap.add_argument("--copy_fn_dir", default=None,
-                    help="Copy ALL hard_fn (漏报) videos into this dir for manual review")
-    ap.add_argument("--copy_fp_dir", default=None,
-                    help="Copy ALL hard_fp (误报) videos into this dir for manual review")
-    ap.add_argument("--exclude_reviewed_dir", default=None,
-                    help="Dir of already-reviewed videos (e.g. suspect_videos_after_check); their "
-                         "stems are excluded from --copy_fn_dir/--copy_fp_dir to avoid re-viewing")
     args = ap.parse_args()
 
     preds = load_predictions(args.pred)
@@ -391,19 +352,9 @@ def main():
     rows = analyze(preds, train, args.threshold,
                    args.borderline_band, args.high_conf_band)
     print_summary(rows, args.threshold)
-
-    exclude_stems = None
-    if args.exclude_reviewed_dir:
-        exclude_stems = scan_video_stems(args.exclude_reviewed_dir)
-        print(f"\n[exclude] {len(exclude_stems)} already-reviewed video stems "
-              f"from {args.exclude_reviewed_dir}")
-
     export_hard_sets(rows, args.out_dir, args.borderline_band,
                      args.high_conf_band, args.oversample_factor,
-                     suspect_video_dir=args.suspect_video_dir,
-                     copy_fn_dir=args.copy_fn_dir,
-                     copy_fp_dir=args.copy_fp_dir,
-                     exclude_reviewed_stems=exclude_stems)
+                     suspect_video_dir=args.suspect_video_dir)
 
 
 if __name__ == "__main__":
