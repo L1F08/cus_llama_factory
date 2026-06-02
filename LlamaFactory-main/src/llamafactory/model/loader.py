@@ -234,6 +234,72 @@ def load_model(
 
     logger.info_rank0(param_stats)
 
+    # --- Trainable-parameter breakdown (generic: component x mechanism) ---
+    # Categorizes every trainable tensor by component (llm / vit_blocks / vit_merger / ...)
+    # and mechanism (lora / modules_to_save / plain full), and reports which ViT block
+    # indices were touched. Adapts to any lora_target / freeze_* configuration.
+    if is_trainable and int(os.getenv("LOCAL_RANK", "0")) == 0:
+        import re
+        from collections import defaultdict
+
+        def _classify(name: str) -> tuple[str, str]:
+            if "lora_" in name:
+                mech = "lora"
+            elif "modules_to_save" in name:
+                mech = "full(mts)"
+            else:
+                mech = "full"
+            if "visual.blocks" in name:
+                comp = "vit_blocks"
+            elif "visual.merger" in name:
+                comp = "vit_merger"
+            elif "visual.patch_embed" in name or "visual.pos_embed" in name:
+                comp = "vit_embed"
+            elif "visual" in name:
+                comp = "vit_other"
+            elif "language_model" in name or "lm_head" in name:
+                comp = "llm"
+            else:
+                comp = "other"
+            return comp, mech
+
+        stats: dict = defaultdict(lambda: {"t": 0, "p": 0})
+        samples: dict = defaultdict(list)
+        vit_block_ids: set = set()
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            key = _classify(name)
+            stats[key]["t"] += 1
+            stats[key]["p"] += param.numel()
+            if len(samples[key]) < 2:
+                samples[key].append(name)
+            m = re.search(r"visual\.blocks\.(\d+)\.", name)
+            if m:
+                vit_block_ids.add(int(m.group(1)))
+
+        lines = ["=" * 78, "TRAINABLE PARAMETER BREAKDOWN (component x mechanism)", "=" * 78]
+        lines.append(f"  {'component':<12}|{'mechanism':<11}|{'tensors':>8}|{'params':>15}")
+        lines.append("  " + "-" * 50)
+        tot_t = tot_p = 0
+        for key, s in sorted(stats.items()):
+            lines.append(f"  {key[0]:<12}|{key[1]:<11}|{s['t']:>8}|{s['p']:>15,}")
+            tot_t += s["t"]
+            tot_p += s["p"]
+        lines.append("  " + "-" * 50)
+        lines.append(f"  {'TOTAL':<12}|{'':<11}|{tot_t:>8}|{tot_p:>15,}")
+        if vit_block_ids:
+            ids = sorted(vit_block_ids)
+            contiguous = ids == list(range(ids[0], ids[-1] + 1))
+            span = f"idx {ids[0]}..{ids[-1]}" if contiguous else f"non-contiguous {ids}"
+            lines.append(f"  ViT blocks touched: {len(ids)} layers ({span})")
+        lines.append("  sample names:")
+        for key in sorted(samples):
+            for n in samples[key]:
+                lines.append(f"    [{key[0]}/{key[1]}] {n}")
+        lines.append("=" * 78)
+        logger.info_rank0("\n".join(lines))
+
     if model_args.print_param_status and int(os.getenv("LOCAL_RANK", "0")) == 0:
         for name, param in model.named_parameters():
             print(f"name: {name}, dtype: {param.dtype}, device: {param.device}, trainable: {param.requires_grad}")
