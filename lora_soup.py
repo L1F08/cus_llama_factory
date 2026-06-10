@@ -136,7 +136,7 @@ def soup_adapter(adapter_dirs, weights, out_dir: Path):
         out[k] = acc.to(sds[0][k].dtype)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    save_file(out, str(out_dir / "adapter_model.safetensors"))
+    save_file(out, str(out_dir / "adapter_model.safetensors"), metadata={"format": "pt"})
     shutil.copy2(Path(adapter_dirs[0]) / "adapter_config.json", out_dir / "adapter_config.json")
     print(f"  ↳ {out_dir}  (adapter dir; feed to your usual merge script)")
 

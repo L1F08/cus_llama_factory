@@ -132,7 +132,7 @@ def main():
             else:
                 new_sd[k] = t
 
-        save_file(new_sd, str(out_dir / "adapter_model.safetensors"))
+        save_file(new_sd, str(out_dir / "adapter_model.safetensors"), metadata={"format": "pt"})
 
         cfg = adapter_dir / "adapter_config.json"
         if cfg.exists():
