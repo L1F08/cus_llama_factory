@@ -144,8 +144,13 @@ def soup_adapter(adapter_dirs, weights, out_dir: Path):
 # ---------------- mode: merged ----------------
 def collect_deltas(adapter_dirs, weights):
     """Return (lora_map, mts_map):
-       lora_map: base_key -> list of (w_i, scaled ΔW tensor builder inputs)
-       mts_map:  base_key -> accumulated Σ w_i * W_ft (float32)"""
+       lora_map: base_key -> list of (w_i, scaling, A, B)
+       mts_map:  base_key -> accumulated Σ w_i * W_ft (float32)
+
+    NOTE: PEFT's save_pretrained strips the ".modules_to_save.default" marker,
+    so saved modules_to_save keys are plain paths (e.g.
+    base_model.model.model.visual.merger.linear_fc1.weight). They are detected
+    as: any non-lora key. The in-memory marker format is also handled."""
     w = normalize_weights(weights, len(adapter_dirs))
     lora_map: dict = {}
     mts_map: dict = {}
@@ -160,7 +165,7 @@ def collect_deltas(adapter_dirs, weights):
                 if b_key not in sd:
                     raise SystemExit(f"❌ missing lora_B for {k}")
                 lora_map.setdefault(base_key, []).append((wi, s, sd[k].float(), sd[b_key].float()))
-            elif ".modules_to_save." in k:
+            elif "lora_" not in k:  # modules_to_save (saved format has no marker)
                 kb = k[len("base_model.model."):] if k.startswith("base_model.model.") else k
                 base_key = kb.replace(".modules_to_save.default", "")
                 acc = mts_map.get(base_key)

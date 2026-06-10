@@ -52,12 +52,28 @@ def load_adapter_sd(path: Path) -> dict:
 
 
 def mts_to_base_key(adapter_key: str) -> str:
-    """base_model.model.model.visual.merger.modules_to_save.default.linear_fc1.weight
-    -> model.visual.merger.linear_fc1.weight (matches base safetensors index)."""
+    """Map a modules_to_save adapter key to its base-model key.
+
+    NOTE: PEFT's save_pretrained STRIPS the ".modules_to_save.default" marker, so
+    saved merger keys look like plain paths:
+        base_model.model.model.visual.merger.linear_fc1.weight
+    (The in-memory name with the marker is also handled for robustness.)
+    """
     k = adapter_key
     if k.startswith("base_model.model."):
         k = k[len("base_model.model."):]
     return k.replace(".modules_to_save.default", "")
+
+
+def base_index_keys(base_dir: Path) -> set:
+    idx_path = base_dir / "model.safetensors.index.json"
+    if idx_path.exists():
+        return set(json.load(open(idx_path))["weight_map"].keys())
+    single = base_dir / "model.safetensors"
+    if not single.exists():
+        raise SystemExit(f"❌ no safetensors index or single file under {base_dir}")
+    with safe_open(str(single), framework="pt") as f:
+        return set(f.keys())
 
 
 def load_base_tensors(base_dir: Path, keys: list) -> dict:
@@ -104,16 +120,36 @@ def main():
     adapter_file = find_adapter_file(adapter_dir)
     sd = load_adapter_sd(adapter_file)
 
-    lora_b_keys = [k for k in sd if "lora_B" in k or "lora_embedding_B" in k]
-    mts_keys = [k for k in sd if ".modules_to_save." in k]
-    other = len(sd) - len(lora_b_keys) - len([k for k in sd if "lora_A" in k or "lora_embedding_A" in k]) - len(mts_keys)
-    print(f"[adapter] {adapter_file}")
-    print(f"          lora_B tensors: {len(lora_b_keys)}  modules_to_save tensors: {len(mts_keys)}"
-          f"  (other non-A/B: {other})")
+    # Classify every key. PEFT-saved modules_to_save have NO ".modules_to_save."
+    # marker — they are exactly the non-lora keys, verified against the base index.
+    idx_keys = base_index_keys(base_dir)
+    scale_keys, mts_map, unknown = set(), {}, []
+    for k in sd:
+        if "lora_B" in k or "lora_embedding_B" in k:
+            scale_keys.add(k)
+        elif "lora_" in k:
+            if "lora_magnitude_vector" in k:
+                print(f"⚠️  DoRA magnitude vector found ({k}) — simple lora_B scaling is NOT "
+                      f"an exact interpolation under DoRA; results are approximate.")
+            continue  # lora_A etc. pass through untouched
+        else:
+            bk = mts_to_base_key(k)
+            if bk in idx_keys:
+                mts_map[k] = bk          # modules_to_save (saved format)
+            else:
+                unknown.append(k)
 
-    base_needed = {k: mts_to_base_key(k) for k in mts_keys}
-    base_tensors = load_base_tensors(base_dir, sorted(set(base_needed.values()))) if mts_keys else {}
-    if mts_keys:
+    print(f"[adapter] {adapter_file}")
+    print(f"          lora_B to scale: {len(scale_keys)}  modules_to_save to interpolate: {len(mts_map)}")
+    if unknown:
+        print(f"⚠️  {len(unknown)} keys are neither lora nor found in base — passed through UNCHANGED:")
+        for k in unknown[:10]:
+            print(f"    {k}")
+    if not mts_map:
+        print("ℹ️  no modules_to_save detected (pure-LoRA adapter)")
+
+    base_tensors = load_base_tensors(base_dir, sorted(set(mts_map.values()))) if mts_map else {}
+    if mts_map:
         print(f"[base   ] loaded {len(base_tensors)} tensors for modules_to_save interpolation")
 
     for alpha in args.alphas:
@@ -122,10 +158,10 @@ def main():
 
         new_sd = {}
         for k, t in sd.items():
-            if "lora_B" in k or "lora_embedding_B" in k:
+            if k in scale_keys:
                 new_sd[k] = (t.float() * alpha).to(t.dtype)
-            elif ".modules_to_save." in k:
-                tb = base_tensors[base_needed[k]]
+            elif k in mts_map:
+                tb = base_tensors[mts_map[k]]
                 if tb.shape != t.shape:
                     raise SystemExit(f"❌ shape mismatch for {k}: ft {tuple(t.shape)} vs base {tuple(tb.shape)}")
                 new_sd[k] = (alpha * t.float() + (1.0 - alpha) * tb.float()).to(t.dtype)
