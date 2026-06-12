@@ -182,6 +182,11 @@ def load_model(
 
     model = init_adapter(config, model, model_args, finetuning_args, is_trainable)
 
+    if is_trainable and getattr(finetuning_args, "merger_dropout", 0) > 0:
+        from .model_utils.visual import apply_merger_dropout
+
+        apply_merger_dropout(model, finetuning_args.merger_dropout)
+
     if add_valuehead:
         model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
         patch_valuehead_model(model)

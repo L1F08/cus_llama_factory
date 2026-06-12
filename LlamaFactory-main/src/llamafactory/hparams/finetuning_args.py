@@ -532,6 +532,16 @@ class FinetuningArguments(
         default=True,
         metadata={"help": "Whether or not to freeze the multi modal projector in MLLM training."},
     )
+    merger_dropout: float = field(
+        default=0.0,
+        metadata={
+            "help": (
+                "Dropout applied to the multi-modal projector's hidden activations during training "
+                "(input of merger.linear_fc2). Intended for full-parameter merger training via "
+                "additional_target, where lora_dropout has no effect. Inactive at eval/inference."
+            )
+        },
+    )
     freeze_language_model: bool = field(
         default=False,
         metadata={"help": "Whether or not to freeze the language model in MLLM training."},
