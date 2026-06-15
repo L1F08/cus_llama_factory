@@ -24,7 +24,7 @@ TRAIN_JSON=${TRAIN_JSON:-${BASE}/risk_pool_32k_-3_0.json}         # !!! 风险�
 OUT_JSON=${OUT_JSON:-${BASE}/risk_pool_32k_-3_0_cleaned.json}
 VERDICT_COL=${VERDICT_COL:-real_label}
 STEM_COL=${STEM_COL:-stem}
-SCENE_COL=${SCENE_COL:-lyf_check}
+SCENE_COL=${SCENE_COL:-}      # 默认不做场景交叉分析；如需可传某列名
 
 DRY_ARG=""
 [ "${DRY:-0}" = "1" ] && DRY_ARG="--dry_run"
@@ -43,14 +43,16 @@ echo "=================================================="
 [ -f "${XLSX}" ] || { echo "❌ xlsx not found: ${XLSX}"; exit 1; }
 [ -f "${TRAIN_JSON}" ] || { echo "❌ train_json not found: ${TRAIN_JSON}"; exit 1; }
 
+SCENE_ARG=""
+[ -n "${SCENE_COL}" ] && SCENE_ARG="--scene_col ${SCENE_COL}"
+
 python ${SCRIPT} \
     --xlsx ${XLSX} \
     --train_json ${TRAIN_JSON} \
     --out_json ${OUT_JSON} \
     --verdict_col ${VERDICT_COL} \
     --stem_col ${STEM_COL} \
-    --scene_col ${SCENE_COL} \
-    ${DROP_ARG} ${DRY_ARG}
+    ${SCENE_ARG} ${DROP_ARG} ${DRY_ARG}
 
 echo ""
 echo "确认 verdict 分布/映射无误后（去掉 DRY=1）产出清洗池，再从中选 27k 正 + 20k 负训 Exp10。"

@@ -63,7 +63,7 @@ def main():
     ap.add_argument("--stem_col", default="stem")
     ap.add_argument("--verdict_col", default="real_label")
     ap.add_argument("--p_safe_col", default="p_safe")
-    ap.add_argument("--scene_col", default="lyf_check", help="Optional condition column for analysis only")
+    ap.add_argument("--scene_col", default="", help="Optional condition column for analysis only (empty = skip)")
     ap.add_argument("--annotator_col", default="num_type", help="Optional annotator column for analysis")
     ap.add_argument("--drop_labels", default=None,
                     help="Comma-separated verdict values to DROP (default: the known bad set)")
@@ -116,8 +116,8 @@ def main():
             print(f"  {v or '<空>':<22} n={len(xs):>5}  mean={sum(xs)/len(xs):.3f}  "
                   f"min={min(xs):.3f}  max={max(xs):.3f}")
 
-    # ---- analysis: scene/condition cross-tab ----
-    if args.scene_col in header:
+    # ---- analysis: scene/condition cross-tab (only if explicitly requested) ----
+    if args.scene_col and args.scene_col in header:
         print(f"\n  --- '{args.scene_col}' × verdict（哪类条件多 DROP）---")
         cross = defaultdict(Counter)
         for r in recs:
