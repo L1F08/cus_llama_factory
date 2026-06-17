@@ -187,8 +187,20 @@ def run_triage(args, side):
             w.writerow(row)
     print(f"  ↳ {csv_path}")
 
-    # copy videos for review
-    to_copy = queue[: args.limit] if args.limit and args.limit > 0 else queue
+    # safety guard: an implausibly large queue almost always means wrong input
+    # (e.g. feeding the risk pool / positives into triage_neg) — don't copy 30k videos.
+    if args.limit and args.limit > 0:
+        to_copy = queue[: args.limit]
+    elif len(queue) > args.copy_cap:
+        print(f"\n  ⚠️⚠️ 队列 {len(queue)} > copy_cap {args.copy_cap}：异常大！")
+        print(f"     最可能是输入文件搞错（如 triage_neg 却喂了风险池/正样本推理，"
+              f"或 triage 喂了负样本）。")
+        print(f"     已跳过视频拷贝（triage_queue.csv 仍写出，可先检查）。"
+              f"确认无误后用 --limit N 分批，或 --copy_cap 调大。")
+        to_copy = []
+    else:
+        to_copy = queue
+
     vid_dir = out / "review_videos"
     vid_dir.mkdir(exist_ok=True)
     copied = missing = 0
@@ -285,6 +297,8 @@ def main():
     ap.add_argument("--p_safe_threshold", type=float, default=0.5,
                     help="队列分数阈值（pos 用 P(安全)、neg 用 P(高风险)），≥ 此值入队（默认 0.5）")
     ap.add_argument("--limit", type=int, default=0, help=">0 时只拷贝队列前 N 个视频")
+    ap.add_argument("--copy_cap", type=int, default=5000,
+                    help="队列 > 此值且未设 --limit 时跳过拷贝并报警（防喂错文件，默认 5000）")
     # apply
     ap.add_argument("--train_json", help="要清洗的 manifest（含正负样本；也可只是训练负样本/Test1集）")
     ap.add_argument("--review_dir", help="人工分拣后的目录（含 verdict 子目录）")

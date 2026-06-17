@@ -76,7 +76,7 @@ if [ "${MODE}" = "triage" ] || [ "${MODE}" = "triage_neg" ]; then
     fi
 
     mkdir -p ${OUT_DIR}
-    python ${SCRIPT} --mode ${MODE} \
+    python -u ${SCRIPT} --mode ${MODE} \
         --pred ${PRED} ${PRED2_ARG} \
         --out_dir ${OUT_DIR} \
         --p_safe_threshold ${P_SAFE_THRESHOLD} \
@@ -103,7 +103,7 @@ elif [ "${MODE}" = "apply" ] || [ "${MODE}" = "apply_neg" ]; then
     if [ ! -f "${TRAIN_JSON}" ]; then echo "❌ train_json not found: ${TRAIN_JSON}"; exit 1; fi
     if [ ! -d "${REVIEW_DIR}" ]; then echo "❌ review_dir not found: ${REVIEW_DIR}"; exit 1; fi
 
-    python ${SCRIPT} --mode ${MODE} \
+    python -u ${SCRIPT} --mode ${MODE} \
         --train_json ${TRAIN_JSON} \
         --review_dir ${REVIEW_DIR} \
         --out_json ${OUT_JSON} \
