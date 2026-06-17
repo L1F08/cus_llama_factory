@@ -9,39 +9,33 @@ Handling rule (experiments_log 观察12): such samples must be DROPPED —
 never label-flipped (the event IS risky: AEB fired), never re-cut to a
 post-trigger window (re-introduces the braking leak).
 
-Two modes:
+Four modes — two sides, each with triage (build review queue) + apply (clean):
 
-  --mode triage   Input: prediction JSON over ALL label=1 training positives
-                  (id = video path, logits.{安全,高风险}).
-                  Output: suspect queue sorted by P(安全) desc, P(安全)
-                  distribution stats, triage_queue.csv, and copies of the
-                  queue videos into <out_dir>/review_videos/ for human
-                  sorting into subfolders:
-                      visible_risk/   风险在窗口内可见   → keep
-                      invisible/      风险不可见         → drop
-                      not_sure/       说不清            → drop
-                      low_quality/    视频质量差         → drop
-                  Optional --pred2 (e.g. Exp6 as a second probe): samples
-                  where BOTH models say 安全 rank first (strongest signal).
+  POSITIVE side (label=高风险, model says 安全 → suspect "risk invisible"):
+    --mode triage   queue = positives sorted by P(安全) desc → human sort into
+                    visible_risk(keep) / invisible / not_sure / low_quality(drop).
+    --mode apply    drop the dropped-verdict stems from the manifest.
 
-  --mode apply    Input: full train manifest + the human-sorted review dir.
-                  Output: cleaned train JSON (drop stems sorted into
-                  invisible/not_sure/low_quality; keep everything else;
-                  labels untouched).
+  NEGATIVE side (label=安全, model says 高风险 → suspect mislabel OR hard negative):
+    --mode triage_neg  queue = negatives sorted by P(高风险) desc → human sort into
+                    hard_negative(keep, incl. overtake — the precision moat) /
+                    mislabel_risk / not_sure / low_quality(drop).
+    --mode apply_neg   drop the dropped-verdict stems.
+                    ⚠️ NEVER auto-drop the whole queue: overtake-style hard
+                    negatives look identical to mislabels under this probe and
+                    MUST be kept; human review is mandatory.
+
+Both sides: labels are never flipped here (drop only). The same apply can run on
+training negatives OR on a test set's negatives (to audit test-label noise).
+Optional --pred2 second probe: samples both models flag rank first.
 
 Usage:
-    # step 1: build queue + copy videos for review
-    python triage_invisible_risk.py --mode triage \\
-        --pred /path/to/positives_pred.json \\
-        [--pred2 /path/to/exp6_pred.json] \\
-        --out_dir /path/to/triage_out \\
-        [--p_safe_threshold 0.5] [--limit 0]
-
-    # step 3: after human sorting, produce the cleaned train set
-    python triage_invisible_risk.py --mode apply \\
-        --train_json /path/to/train_47k_-3_0.json \\
-        --review_dir /path/to/triage_out/review_videos_after_check \\
-        --out_json   /path/to/train_47k_-3_0_cleaned.json
+    # positives (Exp10/13 cleaning)
+    python triage_invisible_risk.py --mode triage     --pred pos_pred.json --out_dir out_pos
+    python triage_invisible_risk.py --mode apply       --train_json pool.json --review_dir out_pos/review_after --out_json pool_clean.json
+    # negatives (training golden, or Test1 negatives audit)
+    python triage_invisible_risk.py --mode triage_neg --pred neg_pred.json --out_dir out_neg
+    python triage_invisible_risk.py --mode apply_neg   --train_json pool.json --review_dir out_neg/review_after --out_json pool_clean.json
 """
 
 import argparse
@@ -55,6 +49,7 @@ from pathlib import Path
 
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
+# --- POSITIVE side (label=高风险, model says 安全 → suspect "risk invisible") ---
 # verdict folder name -> action
 VERDICT_ACTION = {
     "visible_risk": "keep",
@@ -64,6 +59,39 @@ VERDICT_ACTION = {
     "fake_risk": "drop",      # alias: if reviewer decides label itself is wrong, still drop (no flips here)
     "not_sure": "drop",
     "low_quality": "drop",
+}
+
+# --- NEGATIVE side (label=安全, model says 高风险 → suspect mislabel OR hard negative) ---
+# KEEP = genuinely safe (incl. overtake-style hard negatives — the precision moat).
+# DROP = mislabeled (actually risky), not_sure, low_quality.
+NEG_VERDICT_ACTION = {
+    "hard_negative": "keep",  # 真安全但像危险（overtake 类）→ 必须留，精度护城河
+    "true_safe": "keep",
+    "safe": "keep",
+    "keep": "keep",
+    "mislabel_risk": "drop",  # 标安全实则危险 → 剔（如确认 -3..0 内可见可手动改标为正样本）
+    "real_risk": "drop",
+    "risk": "drop",
+    "not_sure": "drop",
+    "low_quality": "drop",
+}
+
+# per-side config: triage 队列按哪个分数排、审核子目录、apply 用哪张 verdict 表
+SIDE = {
+    "pos": {
+        "score_key": "p_safe",
+        "title": "正样本（标高风险、模型判安全）→ 疑似风险不可见",
+        "both_desc": "两模型都判安全（最强不可学信号）",
+        "folders": "visible_risk(留) / invisible(剔) / not_sure(剔) / low_quality(剔)",
+        "verdict_map": VERDICT_ACTION,
+    },
+    "neg": {
+        "score_key": "p_risk",
+        "title": "负样本（标安全、模型判高风险）→ 疑似标错 或 硬负样本",
+        "both_desc": "两模型都判高风险（最强信号）",
+        "folders": "hard_negative(真安全/overtake，留) / mislabel_risk(真危险，剔) / not_sure(剔) / low_quality(剔)",
+        "verdict_map": NEG_VERDICT_ACTION,
+    },
 }
 
 
@@ -99,57 +127,63 @@ def load_pred(path: str) -> dict:
     return out
 
 
-# ---------------- mode: triage ----------------
-def run_triage(args):
+# ---------------- mode: triage (pos/neg) ----------------
+def run_triage(args, side):
+    cfg = SIDE[side]
+    sk = cfg["score_key"]            # "p_safe" (pos) or "p_risk" (neg)
     preds = load_pred(args.pred)
     preds2 = load_pred(args.pred2) if args.pred2 else None
+    for d in (preds, preds2):
+        if d:
+            for v in d.values():
+                v["p_risk"] = 1.0 - v["p_safe"]
 
-    # P(安全) distribution over ALL positives
+    print(f"\n  triage side = {side}  ——  {cfg['title']}")
+
+    # score distribution over ALL samples of this label
     bins = Counter()
     for v in preds.values():
-        bins[min(int(v["p_safe"] * 10), 9)] += 1
+        bins[min(int(v[sk] * 10), 9)] += 1
     n = len(preds)
-    print("\n  --- P(安全) 分布（全部正样本）---")
+    print(f"\n  --- {sk} 分布（全部样本）---")
     for b in range(10):
         cnt = bins.get(b, 0)
         bar = "█" * (cnt * 60 // max(n, 1))
         print(f"  [{b/10:.1f},{(b+1)/10:.1f}) {cnt:>7} {bar}")
 
-    thr = args.p_safe_threshold
-    queue = [dict(stem=k, **v) for k, v in preds.items() if v["p_safe"] >= thr]
+    thr = args.p_safe_threshold      # generic queue threshold on the side's score
+    queue = [dict(stem=k, **v) for k, v in preds.items() if v[sk] >= thr]
     if preds2 is not None:
         for q in queue:
             v2 = preds2.get(q["stem"])
-            q["p_safe2"] = v2["p_safe"] if v2 else None
-            q["both_safe"] = bool(v2 and v2["p_safe"] >= thr)
-        queue.sort(key=lambda q: (not q["both_safe"], -q["p_safe"]))
-        n_both = sum(1 for q in queue if q["both_safe"])
-        print(f"\n  双探针: 队列中 both-safe（两模型都判安全，最强不可学信号）= {n_both}")
+            q["score2"] = v2[sk] if v2 else None
+            q["both"] = bool(v2 and v2[sk] >= thr)
+        queue.sort(key=lambda q: (not q["both"], -q[sk]))
+        print(f"\n  双探针: 队列中 both（{cfg['both_desc']}）= {sum(1 for q in queue if q['both'])}")
     else:
-        queue.sort(key=lambda q: -q["p_safe"])
+        queue.sort(key=lambda q: -q[sk])
 
     for c in (0.9, 0.7, 0.5):
         if c >= thr:
-            print(f"  P(安全) ≥ {c}: {sum(1 for q in queue if q['p_safe'] >= c)}")
-    print(f"  队列总数（≥{thr}）: {len(queue)} / {n}  "
-          f"({len(queue)/max(n,1):.1%} 的正样本)")
+            print(f"  {sk} ≥ {c}: {sum(1 for q in queue if q[sk] >= c)}")
+    print(f"  队列总数（{sk}≥{thr}）: {len(queue)} / {n}  ({len(queue)/max(n,1):.1%} 的本类样本)")
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     # queue csv
     csv_path = out / "triage_queue.csv"
-    fields = ["rank", "stem", "p_safe"] + (["p_safe2", "both_safe"] if preds2 else []) + \
-             ["logit_safe", "logit_risk", "video"]
+    fields = ["rank", "stem", sk] + (["score2", "both"] if preds2 else []) + \
+             ["p_safe", "p_risk", "logit_safe", "logit_risk", "video"]
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(fields)
         for i, q in enumerate(queue, 1):
-            row = [i, q["stem"], f"{q['p_safe']:.6f}"]
+            row = [i, q["stem"], f"{q[sk]:.6f}"]
             if preds2:
-                row += [f"{q['p_safe2']:.6f}" if q["p_safe2"] is not None else "",
-                        int(q["both_safe"])]
-            row += [q["logit_safe"], q["logit_risk"], q["video"]]
+                row += [f"{q['score2']:.6f}" if q["score2"] is not None else "", int(q["both"])]
+            row += [f"{q['p_safe']:.6f}", f"{q['p_risk']:.6f}",
+                    q["logit_safe"], q["logit_risk"], q["video"]]
             w.writerow(row)
     print(f"  ↳ {csv_path}")
 
@@ -166,8 +200,8 @@ def run_triage(args):
             missing += 1
     print(f"  ↳ {vid_dir}: copied {copied}, missing {missing}"
           + (f" (limit={args.limit})" if args.limit else ""))
-    print("\n下一步：人工把 review_videos/ 里的视频分拣到子目录 "
-          "visible_risk / invisible / not_sure / low_quality，然后跑 --mode apply。")
+    print(f"\n下一步：人工把 review_videos/ 分拣到子目录：{cfg['folders']}，"
+          f"然后跑 --mode {'apply' if side == 'pos' else 'apply_neg'}。")
 
 
 # ---------------- mode: apply ----------------
@@ -181,21 +215,28 @@ def label_of(sample):
     return int(raw)
 
 
-def run_apply(args):
+def run_apply(args, side):
+    verdict_map = SIDE[side]["verdict_map"]
     # scan verdict folders
     root = Path(args.review_dir)
     if not root.is_dir():
         raise SystemExit(f"❌ review_dir not found: {root}")
     verdicts = {}  # stem -> (verdict, action)
+    unknown_dirs = []
     for d in root.rglob("*"):
         if not d.is_dir():
             continue
-        action = VERDICT_ACTION.get(d.name)
+        action = verdict_map.get(d.name)
         if action is None:
+            # a dir that isn't a recognized verdict for this side — flag if it holds videos
+            if any(f.suffix.lower() in VIDEO_EXTS for f in d.iterdir() if f.is_file()):
+                unknown_dirs.append(d.name)
             continue
         for f in d.iterdir():
             if f.suffix.lower() in VIDEO_EXTS:
                 verdicts[f.stem] = (d.name, action)
+    if unknown_dirs:
+        print(f"  ⚠️ 未识别的子目录（含视频但不在 {side} verdict 表内，已忽略）: {sorted(set(unknown_dirs))}")
     cnt = Counter(v[0] for v in verdicts.values())
     print(f"[review] {len(verdicts)} sorted videos: "
           + ", ".join(f"{k}={v}" for k, v in sorted(cnt.items())))
@@ -233,28 +274,32 @@ def run_apply(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["triage", "apply"], required=True)
+    ap.add_argument("--mode", required=True,
+                    choices=["triage", "apply", "triage_neg", "apply_neg"],
+                    help="triage/apply = 正样本（标高风险、判安全）；"
+                         "triage_neg/apply_neg = 负样本（标安全、判高风险）")
     # triage
-    ap.add_argument("--pred", help="主探针预测 JSON（Exp8 对全部高风险正样本的推理）")
-    ap.add_argument("--pred2", default=None, help="可选第二探针（如 Exp6），both-safe 优先")
+    ap.add_argument("--pred", help="主探针预测 JSON（对该类样本的推理；id=视频路径, logits.{安全,高风险}）")
+    ap.add_argument("--pred2", default=None, help="可选第二探针，双探针一致者优先")
     ap.add_argument("--out_dir", help="triage 输出目录")
     ap.add_argument("--p_safe_threshold", type=float, default=0.5,
-                    help="P(安全) ≥ 此值进入审核队列（默认 0.5）")
+                    help="队列分数阈值（pos 用 P(安全)、neg 用 P(高风险)），≥ 此值入队（默认 0.5）")
     ap.add_argument("--limit", type=int, default=0, help=">0 时只拷贝队列前 N 个视频")
     # apply
-    ap.add_argument("--train_json", help="完整训练 manifest（-3..0 全集，含正负）")
-    ap.add_argument("--review_dir", help="人工分拣后的目录（含 visible_risk/invisible/... 子目录）")
-    ap.add_argument("--out_json", help="清洗后训练集输出路径")
+    ap.add_argument("--train_json", help="要清洗的 manifest（含正负样本；也可只是训练负样本/Test1集）")
+    ap.add_argument("--review_dir", help="人工分拣后的目录（含 verdict 子目录）")
+    ap.add_argument("--out_json", help="清洗后输出路径")
     args = ap.parse_args()
 
-    if args.mode == "triage":
+    side = "neg" if args.mode.endswith("neg") else "pos"
+    if args.mode in ("triage", "triage_neg"):
         if not args.pred or not args.out_dir:
             raise SystemExit("❌ triage 需要 --pred 与 --out_dir")
-        run_triage(args)
+        run_triage(args, side)
     else:
         if not (args.train_json and args.review_dir and args.out_json):
             raise SystemExit("❌ apply 需要 --train_json / --review_dir / --out_json")
-        run_apply(args)
+        run_apply(args, side)
 
 
 if __name__ == "__main__":

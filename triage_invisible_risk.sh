@@ -1,17 +1,20 @@
 #!/usr/bin/bash
 # triage_invisible_risk.sh — "不可见风险"正样本分诊 / 清洗（Exp10 流水线）
 #
-# 两种模式：
-#   triage: 用模型自推理结果建审核队列（P(安全) 降序）+ 拷视频供人工分拣
-#   apply:  人工分拣完成后，剔除 invisible/not_sure/low_quality，产出清洗后训练集
+# 四种模式（两侧 × triage/apply）：
+#   正样本（标高风险、判安全 → 疑似风险不可见）：
+#     triage     建队列(P(安全)降序)+拷视频；   apply     剔 invisible/not_sure/low_quality
+#   负样本（标安全、判高风险 → 疑似标错 或 硬负样本）：
+#     triage_neg 建队列(P(高风险)降序)+拷视频； apply_neg 剔 mislabel_risk/not_sure/low_quality
+#                ⚠️ 保留 hard_negative（overtake 类，精度护城河）
 #
 # 用法：
-#   bash triage_invisible_risk.sh                      # 默认 triage
-#   PRED2=/path/exp6_pred.json bash triage_invisible_risk.sh   # 双探针
-#   MODE=apply bash triage_invisible_risk.sh
+#   bash triage_invisible_risk.sh                          # 默认 triage（正样本）
+#   MODE=triage_neg bash triage_invisible_risk.sh          # 负样本分诊
+#   MODE=apply_neg REVIEW_DIR=<分拣目录> bash triage_invisible_risk.sh
 #
 # 可选环境变量：
-#   MODE               triage | apply        (默认 triage)
+#   MODE               triage | apply | triage_neg | apply_neg   (默认 triage)
 #   == triage ==
 #   PRED               Exp8 对全部"高风险"正样本的推理 JSON
 #   PRED2              可选第二探针（如 Exp6 同批推理），both-safe 排最前
@@ -52,13 +55,15 @@ log_file=${log_dir}/triage_${MODE}_${ts}.log
 
 if [ ! -f "${SCRIPT}" ]; then echo "❌ triage_invisible_risk.py not found: ${SCRIPT}"; exit 1; fi
 
-if [ "${MODE}" = "triage" ]; then
+if [ "${MODE}" = "triage" ] || [ "${MODE}" = "triage_neg" ]; then
+    if [ "${MODE}" = "triage_neg" ]; then SIDE_DESC="负样本（标安全、判高风险）"; SCORE="P(高风险)";
+                                     else SIDE_DESC="正样本（标高风险、判安全）"; SCORE="P(安全)"; fi
     echo "=================================================="
-    echo "  Triage invisible-risk positives"
+    echo "  Triage [${MODE}] — ${SIDE_DESC}"
     echo "  pred:       ${PRED}"
     echo "  pred2:      ${PRED2:-（未用）}"
     echo "  out_dir:    ${OUT_DIR}"
-    echo "  threshold:  P(安全) ≥ ${P_SAFE_THRESHOLD}"
+    echo "  threshold:  ${SCORE} ≥ ${P_SAFE_THRESHOLD}"
     echo "  limit:      ${LIMIT}"
     echo "  log:        ${log_file}"
     echo "=================================================="
@@ -71,7 +76,7 @@ if [ "${MODE}" = "triage" ]; then
     fi
 
     mkdir -p ${OUT_DIR}
-    python ${SCRIPT} --mode triage \
+    python ${SCRIPT} --mode ${MODE} \
         --pred ${PRED} ${PRED2_ARG} \
         --out_dir ${OUT_DIR} \
         --p_safe_threshold ${P_SAFE_THRESHOLD} \
@@ -79,13 +84,17 @@ if [ "${MODE}" = "triage" ]; then
         2>&1 | tee ${log_file}
 
     echo ""
-    echo "人工分拣：把 ${OUT_DIR}/review_videos/ 的视频分到"
-    echo "  visible_risk/（留） invisible/ not_sure/ low_quality/（剔）"
-    echo "分拣完成后：MODE=apply REVIEW_DIR=<分拣目录> bash triage_invisible_risk.sh"
+    if [ "${MODE}" = "triage_neg" ]; then
+        echo "人工分拣 ${OUT_DIR}/review_videos/ → hard_negative(留) / mislabel_risk / not_sure / low_quality(剔)"
+        echo "分拣完成后：MODE=apply_neg REVIEW_DIR=<分拣目录> bash triage_invisible_risk.sh"
+    else
+        echo "人工分拣 ${OUT_DIR}/review_videos/ → visible_risk(留) / invisible / not_sure / low_quality(剔)"
+        echo "分拣完成后：MODE=apply REVIEW_DIR=<分拣目录> bash triage_invisible_risk.sh"
+    fi
 
-elif [ "${MODE}" = "apply" ]; then
+elif [ "${MODE}" = "apply" ] || [ "${MODE}" = "apply_neg" ]; then
     echo "=================================================="
-    echo "  Apply review verdicts → cleaned train set"
+    echo "  Apply [${MODE}] review verdicts → cleaned set"
     echo "  train_json: ${TRAIN_JSON}"
     echo "  review_dir: ${REVIEW_DIR}"
     echo "  out_json:   ${OUT_JSON}"
@@ -94,17 +103,17 @@ elif [ "${MODE}" = "apply" ]; then
     if [ ! -f "${TRAIN_JSON}" ]; then echo "❌ train_json not found: ${TRAIN_JSON}"; exit 1; fi
     if [ ! -d "${REVIEW_DIR}" ]; then echo "❌ review_dir not found: ${REVIEW_DIR}"; exit 1; fi
 
-    python ${SCRIPT} --mode apply \
+    python ${SCRIPT} --mode ${MODE} \
         --train_json ${TRAIN_JSON} \
         --review_dir ${REVIEW_DIR} \
         --out_json ${OUT_JSON} \
         2>&1 | tee ${log_file}
 
     echo ""
-    echo "清洗后训练集: ${OUT_JSON} → 用它训 Exp10（batch 64，可试 num_train_epochs: 3）"
+    echo "清洗后集合: ${OUT_JSON}（仅剔除，无翻标签）"
 
 else
-    echo "❌ unknown MODE='${MODE}'. Use MODE=triage or MODE=apply."; exit 1
+    echo "❌ unknown MODE='${MODE}'. 用 triage | apply | triage_neg | apply_neg。"; exit 1
 fi
 
 ln -sf ${log_file} ${log_dir}/triage_${MODE}_latest.log
