@@ -67,6 +67,11 @@ def main():
     ap.add_argument("--annotator_col", default="num_type", help="Optional annotator column for analysis")
     ap.add_argument("--drop_labels", default=None,
                     help="Comma-separated verdict values to DROP (default: the known bad set)")
+    ap.add_argument("--keep_labels", default="visible_risk",
+                    help="逗号分隔：算作'人工确认难例'的 verdict 值（默认 visible_risk）。"
+                         "这些样本(模型答错但确为真风险)可导出供 build_final_dataset 翻倍")
+    ap.add_argument("--export_hard", default=None,
+                    help="把上述难例导出为 JSON（训练格式），作 build_final_dataset 的 --true_hard_json")
     ap.add_argument("--dry_run", action="store_true", help="Analyze only, do not write out_json")
     args = ap.parse_args()
 
@@ -134,13 +139,20 @@ def main():
         for a, c in ac.most_common():
             print(f"  {a:<16} {c}")
 
-    # ---- build drop set ----
-    drop_stems = set()
+    keep_labels = set(s.strip().lower() for s in args.keep_labels.split(",") if s.strip())
+
+    # ---- build drop set + hard set（人工确认难例：模型答错但确为真风险）----
+    drop_stems, hard_stems = set(), set()
     for r in recs:
-        if norm(r.get(args.verdict_col)) in drop_labels:
-            stem = str(r.get(args.stem_col)).strip()
-            if stem and stem.lower() != "none":
-                drop_stems.add(Path(stem).stem)  # tolerate path or bare stem
+        v = norm(r.get(args.verdict_col))
+        stem = str(r.get(args.stem_col)).strip()
+        if not stem or stem.lower() == "none":
+            continue
+        st = Path(stem).stem  # tolerate path or bare stem
+        if v in drop_labels:
+            drop_stems.add(st)
+        elif v in keep_labels:
+            hard_stems.add(st)
 
     # ---- apply to manifest ----
     with open(args.train_json, "r", encoding="utf-8") as f:
@@ -173,12 +185,23 @@ def main():
     print(f"  DROP 判定共 {len(drop_stems)} 个 stem，其中 {len(not_found)} 个不在本 manifest "
           f"（预期=备用池/非本集样本）")
 
+    # 难例清单（keep_labels 命中且在清洗后 manifest 内的样本）
+    hard_samples = [s for s in kept
+                    if ((s.get("videos") or [None])[0]
+                        and Path((s["videos"])[0]).stem in hard_stems)]
+    print(f"  难例(keep_labels={sorted(keep_labels)}): 标注 {len(hard_stems)} 个，命中本集 {len(hard_samples)} 个"
+          + ("  → 用 --export_hard 导出供 build_final_dataset 翻倍" if not args.export_hard else ""))
+
     if args.dry_run:
         print("\n  [dry_run] 未写出。确认列与映射无误后去掉 --dry_run 再跑。")
     else:
         with open(args.out_json, "w", encoding="utf-8") as f:
             json.dump(kept, f, ensure_ascii=False, indent=2)
         print(f"\n  ↳ {args.out_json}（仅剔除，无翻标签/换窗口）")
+        if args.export_hard:
+            with open(args.export_hard, "w", encoding="utf-8") as f:
+                json.dump(hard_samples, f, ensure_ascii=False, indent=2)
+            print(f"  ↳ {args.export_hard}（难例清单 {len(hard_samples)} 条，作 build_final_dataset 的 --true_hard_json）")
 
 
 if __name__ == "__main__":
