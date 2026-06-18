@@ -286,27 +286,17 @@ def run_apply(args, side):
         else:
             kept.append(s)
 
-    n_clean = len(kept)
-
-    # ---- oversample human-confirmed HARD examples (visible_risk / hard_negative) ----
-    n_hard = n_extra = 0
-    if args.oversample_factor and args.oversample_factor > 1:
-        hard_dirs = args.hard_review_dirs or [args.review_dir]
-        hard_stems = collect_keep_stems(hard_dirs)
-        hard_samples = [s for s in kept if (lambda v: Path(v[0]).stem if v else None)(s.get("videos")) in hard_stems]
-        n_hard = len(hard_samples)
-        extra = hard_samples * (args.oversample_factor - 1)
-        n_extra = len(extra)
-        kept = kept + extra  # 训练集；trainer 会 shuffle，顺序无所谓
-
-    # ---- optional: export the hard examples as a separate manifest (for build_final_dataset reuse) ----
+    # ---- optional: export the human-confirmed HARD examples as a separate manifest ----
+    # 难例 = visible_risk(正样本轮) / hard_negative(负样本轮) = 模型答错但标签对的样本。
+    # 导出后作 build_final_dataset 的 --true_hard_json，由它在划分后只对 train 侧翻倍（防泄漏）。
     if args.export_hard:
         hard_dirs = args.hard_review_dirs or [args.review_dir]
         hs = collect_keep_stems(hard_dirs)
-        hard_only = [s for s in train if (lambda v: Path(v[0]).stem if v else None)(s.get("videos")) in hs]
+        hard_only = [s for s in train
+                     if (lambda v: Path(v[0]).stem if v else None)(s.get("videos")) in hs]
         with open(args.export_hard, "w", encoding="utf-8") as f:
             json.dump(hard_only, f, ensure_ascii=False, indent=2)
-        print(f"  ↳ 导出难例清单 {args.export_hard}（{len(hard_only)} 条，可作 build_final_dataset 的 --true_hard_json）")
+        print(f"  ↳ 导出难例清单 {args.export_hard}（{len(hard_only)} 条，作 build_final_dataset 的 --true_hard_json）")
 
     pos = sum(1 for s in kept if label_of(s) == 1)
     neg = len(kept) - pos
@@ -314,19 +304,15 @@ def run_apply(args, side):
         json.dump(kept, f, ensure_ascii=False, indent=2)
 
     print("\n" + "=" * 64)
-    print("📦 Cleaned training set")
+    print("📦 Cleaned set")
     print("=" * 64)
-    print(f"  原始: {len(train)}  → 剔除 {dropped}  → 清洗后 {n_clean}")
-    if args.oversample_factor and args.oversample_factor > 1:
-        print(f"  难例翻倍: 命中 {n_hard} 条人工确认难例 ×{args.oversample_factor} → +{n_extra} 份 → 最终 {len(kept)}")
-    print(f"  最终 正(高风险) {pos} : 负(安全) {neg}  = {pos/max(neg,1):.2f}:1")
+    print(f"  原始: {len(train)}  → 剔除 {dropped}  → 剩余 {len(kept)}")
+    print(f"  剩余 正(高风险) {pos} : 负(安全) {neg}  = {pos/max(neg,1):.2f}:1")
     if drop_not_found:
         print(f"  ⚠️ {len(drop_not_found)} 个 drop 判定的 stem 在 train json 里没找到（抽样: "
               f"{list(drop_not_found)[:5]}）")
     print(f"  ↳ {args.out_json}")
-    print("  注意：只做了剔除+难例翻倍，没有任何标签翻转/窗口改动。")
-    if args.oversample_factor and args.oversample_factor > 1:
-        print("  ⚠️ 此输出是训练集（含重复的难例副本）；勿再对它做 train/test 划分，否则副本会跨集泄漏。")
+    print("  注意：只做了剔除，没有标签翻转/窗口改动/翻倍。难例翻倍交给 build_final_dataset。")
 
 
 def main():
@@ -348,13 +334,12 @@ def main():
     ap.add_argument("--train_json", help="要清洗的 manifest（含正负样本；也可只是训练负样本/Test1集）")
     ap.add_argument("--review_dir", help="人工分拣后的目录（含 verdict 子目录）")
     ap.add_argument("--out_json", help="清洗后输出路径")
-    ap.add_argument("--oversample_factor", type=int, default=1,
-                    help="人工确认难例(visible_risk/hard_negative)在训练集里出现的总份数（默认 1=不翻倍；2=翻倍）")
     ap.add_argument("--hard_review_dirs", nargs="+", default=None,
-                    help="难例来源的 review 目录(可多个，跨正/负两轮)；默认=--review_dir。"
-                         "其中 keep-verdict 子目录(visible_risk/hard_negative)的样本会被翻倍")
+                    help="难例来源 review 目录(可多个，跨正/负两轮)；默认=--review_dir。"
+                         "keep-verdict 子目录(visible_risk/hard_negative)的样本即难例")
     ap.add_argument("--export_hard", default=None,
-                    help="可选：把难例清单导出为 JSON（训练格式），供 build_final_dataset 的 --true_hard_json")
+                    help="把难例清单导出为 JSON（训练格式），供 build_final_dataset 的 --true_hard_json"
+                         "（翻倍由 build_final_dataset 在 train/test 划分后做，防泄漏）")
     args = ap.parse_args()
 
     side = "neg" if args.mode.endswith("neg") else "pos"

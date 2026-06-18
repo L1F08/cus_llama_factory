@@ -46,8 +46,8 @@ LIMIT=${LIMIT:-0}
 TRAIN_JSON=${TRAIN_JSON:-${BASE}/crash_1cam_2cls_3s_47k_-3_0_135_1_aug.json}  # !!! 改成实际 manifest
 REVIEW_DIR=${REVIEW_DIR:-${OUT_DIR}/review_videos_after_check}
 OUT_JSON=${OUT_JSON:-${BASE}/train_47k_-3_0_cleaned.json}
-# 难例翻倍：人工确认难例(visible_risk/hard_negative)在训练集出现总份数（1=不翻倍, 2=翻倍, 3=三倍）
-OVERSAMPLE_FACTOR=${OVERSAMPLE_FACTOR:-1}
+# 可选：导出难例清单 JSON（visible_risk/hard_negative），供 build_final_dataset 的 --true_hard_json 翻倍
+EXPORT_HARD=${EXPORT_HARD:-}
 # 难例来源 review 目录（空格分隔，可同时给正负两轮分拣目录）；空=用 REVIEW_DIR
 HARD_REVIEW_DIRS=${HARD_REVIEW_DIRS:-}
 
@@ -107,8 +107,8 @@ elif [ "${MODE}" = "apply" ] || [ "${MODE}" = "apply_neg" ]; then
     if [ ! -f "${TRAIN_JSON}" ]; then echo "❌ train_json not found: ${TRAIN_JSON}"; exit 1; fi
     if [ ! -d "${REVIEW_DIR}" ]; then echo "❌ review_dir not found: ${REVIEW_DIR}"; exit 1; fi
 
-    OVS_ARG=""
-    [ "${OVERSAMPLE_FACTOR}" -gt 1 ] && OVS_ARG="--oversample_factor ${OVERSAMPLE_FACTOR}"
+    EXPORT_ARG=""
+    [ -n "${EXPORT_HARD}" ] && EXPORT_ARG="--export_hard ${EXPORT_HARD}"
     HARD_ARG=""
     [ -n "${HARD_REVIEW_DIRS}" ] && HARD_ARG="--hard_review_dirs ${HARD_REVIEW_DIRS}"
 
@@ -116,11 +116,12 @@ elif [ "${MODE}" = "apply" ] || [ "${MODE}" = "apply_neg" ]; then
         --train_json ${TRAIN_JSON} \
         --review_dir ${REVIEW_DIR} \
         --out_json ${OUT_JSON} \
-        ${OVS_ARG} ${HARD_ARG} \
+        ${EXPORT_ARG} ${HARD_ARG} \
         2>&1 | tee ${log_file}
 
     echo ""
-    echo "清洗后集合: ${OUT_JSON}（仅剔除${OVS_ARG:+ + 难例×${OVERSAMPLE_FACTOR}}，无翻标签）"
+    echo "清洗后集合: ${OUT_JSON}（仅剔除，无翻标签）${EXPORT_HARD:+；难例清单: ${EXPORT_HARD}}"
+    echo "难例翻倍 → 用 build_final_dataset：--true_hard_json ${EXPORT_HARD:-<难例json>} --oversample_factor K"
 
 else
     echo "❌ unknown MODE='${MODE}'. 用 triage | apply | triage_neg | apply_neg。"; exit 1
