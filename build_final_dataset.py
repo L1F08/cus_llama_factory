@@ -39,26 +39,34 @@ Usage:
 import argparse
 import json
 import random
+from collections import Counter
 from pathlib import Path
 
-# Shared train/test prompt (the <video> token marks where the clip goes).
+# Shared train/test prompt. Each <video> marks where a clip goes; the order of
+# <video> tokens MUST match the order of paths in each sample's "videos" list.
+# 3-cam version: front + left-fisheye + right-fisheye, braking-clause REMOVED
+# (no post-trigger braking in -3..0). ⚠️ ORDER ASSUMPTION = [front, left, right];
+# verify against your data pipeline (a verification print of sample[0] is emitted).
 PROMPT = (
-    "你是一个自动驾驶安全专家。请观看以下车辆行驶视频：自车前视视角<video>\n"
-    "任务：自动驾驶前视场景碰撞风险二分类。\n"
-    "请严格根据物理环境和车辆动态，判断当前自车是否面临真实的碰撞风险。\n\n"
+    "你是一个自动驾驶安全专家。请观看以下同一时刻、同一车辆的三路行车视频：\n"
+    "自车前视视角<video>\n"
+    "自车左侧鱼眼视角<video>\n"
+    "自车右侧鱼眼视角<video>\n"
+    "任务：自动驾驶碰撞风险二分类。\n"
+    "请综合三个视角，判断当前自车是否面临真实的碰撞风险。\n\n"
     "【判定规则】：\n"
-    "- 输出“高风险”（真实危险）：自车行驶轨迹上存在即将发生物理碰撞的实体威胁。"
-    "只要客观环境构成了紧急碰撞危险，均属于此类，包括但不限于以下典型场景：\n"
+    "- 输出“高风险”（真实危险）：自车行驶轨迹上存在即将发生物理碰撞的实体威胁，"
+    "包括但不限于以下典型场景：\n"
     "  1. 绝对距离压迫：正前方已有明确的实体障碍物（或静止目标）极度逼近。\n"
-    "  2. 纵向追尾/相对速度危险：自车车速过快或前方目标骤停，导致两者的相对距离在画面中急速缩短。\n"
-    "  3. 横向/盲区突发侵入：视野盲区或道路两侧突然有目标（行人、两轮车、其他车辆等）横向切入自车轨迹。\n"
-    "  4. 全局轨迹冲突：如对向车辆失控越线逆行、路口侧方车辆违规抢行、异物掉落等任何即将导致真实碰撞的危险事件。\n"
-    "- 输出“安全”（低风险/系统误触发）：前方及预测轨迹内环境安全，与周围目标的相对距离/速度保持安全，"
-    "无任何即将发生碰撞的实体威胁。**特别注意：即使视频画面出现剧烈抖动、车头明显下沉（表示自车正在急刹减速），"
-    "只要客观上并没有真正会撞上的实体障碍物，均属于系统误触发，必须严格输出“安全”。**\n\n"
-    "请忽略自车不必要的减速动作，基于全局视野评估客观物理威胁。请仅输出“高风险”或“安全”，不要输出其他任何字符："
+    "  2. 纵向追尾/相对速度危险：自车车速过快或前方目标骤停，相对距离急速缩短。\n"
+    "  3. 横向/盲区突发侵入：左右鱼眼视角中，行人/两轮车/其他车辆等从侧方或盲区切入自车轨迹。\n"
+    "  4. 全局轨迹冲突：对向越线逆行、路口侧方违规抢行、异物掉落等即将导致碰撞的事件。\n"
+    "- 输出“安全”（低风险/系统误触发）：前方及预测轨迹内环境安全，与周围目标相对距离/速度保持安全，"
+    "三个视角内均无即将发生碰撞的实体威胁。\n\n"
+    "请基于三路全局视野评估客观物理威胁。请仅输出“高风险”或“安全”，不要输出其他任何字符："
 )
 PROMPT_NO_VIDEO = PROMPT.replace("<video>", "")
+N_VIDEO = PROMPT.count("<video>")   # 期望每条样本的视频路数
 LABEL_TEXT = {0: "安全", 1: "高风险"}
 
 
@@ -72,9 +80,9 @@ def stem_of(sample):
     return Path(videos[0]).stem if videos else None
 
 
-def path_of(sample):
-    videos = sample.get("videos") or []
-    return videos[0] if videos else None
+def paths_of(sample):
+    """ALL video paths of a sample, in list order (front, left, right, ...)."""
+    return list(sample.get("videos") or [])
 
 
 def label_of(sample):
@@ -99,38 +107,36 @@ def load_drop_stems(path):
     return stems
 
 
-# ---- output formatters ----
+# ---- output formatters (multi-cam: preserve ALL videos, N_VIDEO placeholders) ----
 def to_train(sample):
+    paths = paths_of(sample)
     return {
         "messages": [
-            {"role": "user", "content": PROMPT},
+            {"role": "user", "content": PROMPT},          # N_VIDEO 个 <video>
             {"role": "assistant", "content": LABEL_TEXT[label_of(sample)]},
         ],
-        "videos": [path_of(sample)],
+        "videos": paths,                                   # 与 <video> 顺序一一对应
     }
 
 
 def to_test_json(sample):
-    return [{
-        "role": "user",
-        "content": [
-            {"type": "video", "video": path_of(sample)},
-            {"type": "text", "text": PROMPT_NO_VIDEO},
-        ],
-    }]
+    # 视频在前(每路一个 item)+ 去掉 <video> 的 prompt 文本
+    content = [{"type": "video", "video": p} for p in paths_of(sample)]
+    content.append({"type": "text", "text": PROMPT_NO_VIDEO})
+    return [{"role": "user", "content": content}]
 
 
 def to_test_jsonl(sample, max_pixels):
-    before, after = PROMPT.split("<video>", 1)
-    return {
-        "id": stem_of(sample),
-        "label": label_of(sample),
-        "content": [
-            {"type": "text", "text": before},
-            {"type": "video", "video": path_of(sample), "max_pixels": max_pixels},
-            {"type": "text", "text": after},
-        ],
-    }
+    # 在每个 <video> 处切开：N+1 段文字与 N 个视频交错；丢掉空文字段
+    paths = paths_of(sample)
+    parts = PROMPT.split("<video>")            # len == N_VIDEO + 1
+    content = []
+    for i, txt in enumerate(parts):
+        if txt:
+            content.append({"type": "text", "text": txt})
+        if i < len(paths):
+            content.append({"type": "video", "video": paths[i], "max_pixels": max_pixels})
+    return {"id": stem_of(sample), "label": label_of(sample), "content": content}
 
 
 def main():
@@ -158,6 +164,20 @@ def main():
     random.seed(args.seed)
 
     samples = load_json(args.corrected_json)
+
+    # ---- multi-cam sanity: every sample must have exactly N_VIDEO videos ----
+    vid_counts = Counter(len(s.get("videos") or []) for s in samples)
+    print(f"[multicam] PROMPT 期望每条 {N_VIDEO} 路视频；样本视频路数分布: {dict(vid_counts)}")
+    if samples:
+        print(f"[multicam] sample[0].videos（核对顺序应为 前→左→右）:")
+        for p in (samples[0].get("videos") or []):
+            print(f"             {p}")
+    bad = [s for s in samples if len(s.get("videos") or []) != N_VIDEO]
+    if bad:
+        raise SystemExit(
+            f"❌ {len(bad)} 条样本的视频路数 ≠ {N_VIDEO}（PROMPT 的 <video> 个数）。"
+            f"\n   若数据是单视角，改回单视角 PROMPT；若是 3cam，检查数据管道是否每条都出齐 3 路。")
+
     drop_stems = load_drop_stems(args.drop_stems_file)
     hard_stems = set()
     if args.true_hard_json:

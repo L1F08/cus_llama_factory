@@ -143,14 +143,22 @@ def main():
     with open(args.dataset_json, "r", encoding="utf-8") as f:
         samples = json.load(f)
 
+    # Multi-cam aware: scan EVERY video of each sample, all keyed by the sample's
+    # shared stem (front/left/right share one autoscene id, different dirs). The
+    # drop list drops the stem if ANY camera is low-frame/unreadable (a sample
+    # missing a view can't be trained).
     items, no_video = [], 0
     for s in samples:
         videos = s.get("videos") or []
         if not videos:
             no_video += 1
             continue
-        items.append((Path(videos[0]).stem, videos[0]))
-    print(f"[load] {len(items)} videos to scan (skipped {no_video} without video), "
+        stem = Path(videos[0]).stem  # sample id, shared across cameras
+        for v in videos:
+            items.append((stem, v))
+    n_samples = len(samples) - no_video
+    print(f"[load] {n_samples} samples → {len(items)} video files to scan "
+          f"(avg {len(items)/max(n_samples,1):.1f} cam/sample, skipped {no_video} without video), "
           f"method={args.method}, workers={args.workers}")
 
     results = []
