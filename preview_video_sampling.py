@@ -152,7 +152,8 @@ def write_sampled_video(frames, indices, src_fps, out_hw, out_path, hold_sec=0.5
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--videos", nargs="+", help="视频路径（直接给三路）")
+    ap.add_argument("--video", help="单个视频路径（对一条视频用本代码）")
+    ap.add_argument("--videos", nargs="+", help="多个视频路径（如三路一起）")
     ap.add_argument("--sample_json", help="数据 json（取其中一条的 videos）")
     ap.add_argument("--index", type=int, default=0, help="取 json 第几条（默认 0）")
     ap.add_argument("--fps", type=float, nargs="+", required=True, help="要试的 fps 列表")
@@ -167,14 +168,16 @@ def main():
                     help="原速播放：输出帧率=采样fps，真实约3秒时长（忽略 --hold_sec）")
     args = ap.parse_args()
 
-    if args.videos:
+    if args.video:
+        videos = [args.video]
+    elif args.videos:
         videos = args.videos
     elif args.sample_json:
         data = json.load(open(args.sample_json, encoding="utf-8"))
         videos = data[args.index].get("videos") or []
         print(f"[sample] json[{args.index}] videos: {videos}")
     else:
-        raise SystemExit("❌ 需要 --videos 或 --sample_json")
+        raise SystemExit("❌ 需要 --video / --videos / --sample_json 之一")
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)

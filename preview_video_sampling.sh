@@ -15,7 +15,8 @@ BASE=/home/ma-user/work/lyf/data/0626_crash_3cam_2cls_train_all_3s_-3_0
 
 SAMPLE_JSON=${SAMPLE_JSON:-${BASE}/final_dataset/train_final.json}
 INDEX=${INDEX:-0}
-VIDEOS=${VIDEOS:-}                       # 直接给三路视频则优先用它
+VIDEO=${VIDEO:-}                         # 单个视频路径（优先级最高）
+VIDEOS=${VIDEOS:-}                       # 多个视频路径（如三路）
 FPS=${FPS:-"3 4 5 6"}
 MAX_PIXELS=${MAX_PIXELS:-"401408 589824"}
 OUT_DIR=${OUT_DIR:-${BASE}/sampling_preview}
@@ -37,7 +38,10 @@ VID_ARG=""
 [ "${MAKE_VIDEO}" = "1" ] && VID_ARG="--make_video --hold_sec ${HOLD_SEC}"
 [ "${MAKE_VIDEO}" = "1" ] && [ "${REALTIME}" = "1" ] && VID_ARG="${VID_ARG} --realtime"
 
-if [ -n "${VIDEOS}" ]; then
+if [ -n "${VIDEO}" ]; then
+    python ${SCRIPT} --video ${VIDEO} --fps ${FPS} --max_pixels ${MAX_PIXELS} \
+        --out_dir ${OUT_DIR} --per_row ${PER_ROW} ${VID_ARG}
+elif [ -n "${VIDEOS}" ]; then
     python ${SCRIPT} --videos ${VIDEOS} --fps ${FPS} --max_pixels ${MAX_PIXELS} \
         --out_dir ${OUT_DIR} --per_row ${PER_ROW} ${VID_ARG}
 else
