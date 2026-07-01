@@ -119,12 +119,19 @@ def contact_sheet(frames, indices, src_fps, out_hw, per_row, label_h=26):
     return np.vstack(rows)
 
 
-def write_sampled_video(frames, indices, src_fps, out_hw, out_path, hold_sec=0.5):
-    """把采样帧编码成慢放 mp4：每帧显示 hold_sec 秒，帧上标真实时间戳。
-    这样能逐帧看清'这个 fps 下模型看到的运动序列'，判断风险动作连不连贯。"""
+def write_sampled_video(frames, indices, src_fps, out_hw, out_path, hold_sec=0.5,
+                        realtime=False, target_fps=None):
+    """把采样帧编码成 mp4，帧上标真实时间戳。
+    - 慢放（默认）：每帧显示 hold_sec 秒 → 便于逐帧看清运动。
+    - 原速（realtime=True）：每帧显示 1/target_fps 秒 → 视频真实时长≈3s，看真实观感。
+    """
     H, W = out_hw
-    play_fps = 10.0                     # 编码帧率
-    repeat = max(1, round(hold_sec * play_fps))
+    if realtime and target_fps:
+        play_fps = float(target_fps)    # 输出帧率=采样fps → 每帧一张 → 真实3秒时长
+        repeat = 1
+    else:
+        play_fps = 10.0                 # 慢放：每帧显示 hold_sec 秒
+        repeat = max(1, round(hold_sec * play_fps))
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     vw = cv2.VideoWriter(str(out_path), fourcc, play_fps, (W, H + 26))
     for frame, idx in zip(frames, indices):
@@ -153,9 +160,11 @@ def main():
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--per_row", type=int, default=6, help="接触表每行帧数")
     ap.add_argument("--make_video", action="store_true",
-                    help="额外把采样帧编码成慢放 mp4（每帧显示 --hold_sec 秒）")
+                    help="额外把采样帧编码成 mp4")
     ap.add_argument("--hold_sec", type=float, default=0.5,
-                    help="慢放视频里每帧显示多少秒（默认 0.5，越大越看得清逐帧）")
+                    help="慢放模式每帧显示多少秒（默认 0.5，越大越看得清逐帧）")
+    ap.add_argument("--realtime", action="store_true",
+                    help="原速播放：输出帧率=采样fps，真实约3秒时长（忽略 --hold_sec）")
     args = ap.parse_args()
 
     if args.videos:
@@ -204,8 +213,10 @@ def main():
                 fn = out / f"{cam}_fps{fps:g}_px{mp}.png"
                 cv2.imwrite(str(fn), sheet)
                 if args.make_video:
-                    vpath = out / f"{cam}_fps{fps:g}_px{mp}_slow.mp4"
-                    write_sampled_video(frames, idx, info["src_fps"], (Hb, Wb), vpath, args.hold_sec)
+                    tag = "realtime" if args.realtime else "slow"
+                    vpath = out / f"{cam}_fps{fps:g}_px{mp}_{tag}.mp4"
+                    write_sampled_video(frames, idx, info["src_fps"], (Hb, Wb), vpath,
+                                        hold_sec=args.hold_sec, realtime=args.realtime, target_fps=fps)
 
         print(f"   ↳ 接触表 PNG 已写入 {out}/{cam}_fps*_px*.png"
               + ("；慢放 mp4: *_slow.mp4" if args.make_video else ""))

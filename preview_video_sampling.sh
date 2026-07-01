@@ -20,6 +20,9 @@ FPS=${FPS:-"3 4 5 6"}
 MAX_PIXELS=${MAX_PIXELS:-"401408 589824"}
 OUT_DIR=${OUT_DIR:-${BASE}/sampling_preview}
 PER_ROW=${PER_ROW:-6}
+MAKE_VIDEO=${MAKE_VIDEO:-0}          # 1 = 额外导出 mp4
+REALTIME=${REALTIME:-0}             # 1 = 原速(每帧1/fps秒,真实~3s)；0 = 慢放(每帧 HOLD_SEC 秒)
+HOLD_SEC=${HOLD_SEC:-0.5}           # 慢放每帧显示秒数(REALTIME=0 时生效)
 
 echo "=================================================="
 echo "  Preview model-seen frames"
@@ -30,14 +33,19 @@ echo "=================================================="
 
 [ -f "${SCRIPT}" ] || { echo "❌ preview_video_sampling.py not found: ${SCRIPT}"; exit 1; }
 
+VID_ARG=""
+[ "${MAKE_VIDEO}" = "1" ] && VID_ARG="--make_video --hold_sec ${HOLD_SEC}"
+[ "${MAKE_VIDEO}" = "1" ] && [ "${REALTIME}" = "1" ] && VID_ARG="${VID_ARG} --realtime"
+
 if [ -n "${VIDEOS}" ]; then
     python ${SCRIPT} --videos ${VIDEOS} --fps ${FPS} --max_pixels ${MAX_PIXELS} \
-        --out_dir ${OUT_DIR} --per_row ${PER_ROW}
+        --out_dir ${OUT_DIR} --per_row ${PER_ROW} ${VID_ARG}
 else
     [ -f "${SAMPLE_JSON}" ] || { echo "❌ sample_json not found: ${SAMPLE_JSON}"; exit 1; }
     python ${SCRIPT} --sample_json ${SAMPLE_JSON} --index ${INDEX} \
-        --fps ${FPS} --max_pixels ${MAX_PIXELS} --out_dir ${OUT_DIR} --per_row ${PER_ROW}
+        --fps ${FPS} --max_pixels ${MAX_PIXELS} --out_dir ${OUT_DIR} --per_row ${PER_ROW} ${VID_ARG}
 fi
 
 echo ""
-echo "把 ${OUT_DIR}/*.png 下载到本地看：接触表每帧标了时间戳，看关键时刻(触发前0.5-1s)采到没、目标清不清。"
+echo "PNG 接触表: ${OUT_DIR}/*.png（每帧标时间戳）"
+[ "${MAKE_VIDEO}" = "1" ] && echo "mp4: ${OUT_DIR}/*_$([ "${REALTIME}" = "1" ] && echo realtime || echo slow).mp4"
