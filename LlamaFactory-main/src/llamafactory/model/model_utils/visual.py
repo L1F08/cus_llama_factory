@@ -170,6 +170,36 @@ def configure_visual_model(config: "PretrainedConfig") -> None:
         transformers.models.llava.modeling_llava.LlavaMultiModalProjector = LlavaMultiModalProjectorForYiVL
 
 
+def apply_merger_dropout(model: "PreTrainedModel", p: float) -> None:
+    r"""Apply dropout to the multi-modal projector's hidden activations during training.
+
+    modules_to_save (full-parameter) training has no dropout mechanism — lora_dropout only
+    affects LoRA branches, and the merger module has no native dropout knob. This registers
+    a forward pre-hook on every `visual.merger...linear_fc2` (post-activation hidden) using
+    functional dropout gated on `module.training`, so eval/inference is untouched and nothing
+    is persisted into checkpoints or merged weights.
+
+    NOTE: intended for the full-parameter merger setup (additional_target). If the merger is
+    LoRA-targeted instead, this stacks with lora_dropout — avoid combining.
+    """
+
+    def _hook(module: "torch.nn.Module", args: tuple):
+        if module.training and len(args) > 0:
+            return (torch.nn.functional.dropout(args[0], p=p),) + args[1:]
+        return None  # leave inputs unchanged
+
+    num_hooked = 0
+    for name, module in model.named_modules():
+        if "visual.merger" in name and name.endswith("linear_fc2"):
+            module.register_forward_pre_hook(_hook)
+            num_hooked += 1
+
+    if num_hooked == 0:
+        logger.warning_rank0("merger_dropout > 0 but no visual.merger linear_fc2 module was found.")
+    else:
+        logger.info_rank0(f"Applied merger dropout p={p} to {num_hooked} linear_fc2 module(s).")
+
+
 def get_forbidden_modules(config: "PretrainedConfig", finetuning_args: "FinetuningArguments") -> set[str]:
     r"""Freeze vision tower and language model for VLM full/freeze tuning."""
     model_type = getattr(config, "model_type", None)
