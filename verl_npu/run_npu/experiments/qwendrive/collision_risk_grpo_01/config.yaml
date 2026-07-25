@@ -1,0 +1,53 @@
+# 实验配置 — 与 llm_ft_longtime 的 experiments/*/config.yaml 完全同构
+# (download/upload 两节 schema 不变, 新增 convert 节控制 JSON->parquet 转换)
+
+# ====================== 下载模型与数据 ======================
+download:
+  model:
+    # TODO: 替换为 qwendrive 模型的 OBS 路径
+    cloud_path: "obs://<bucket>/<path>/qwendrive/"
+    local_path: "./models/qwendrive/"
+    skip_if_exists: true
+
+  data:
+    # 训练集: LlamaFactory sharegpt 格式 {"messages": [...], "videos": [...]}
+    - cloud_path: "obs://<bucket>/<path>/crash_1cam_2cls_train.json"
+      local_path: "./data/collision_risk_grpo_01/train/crash_1cam_2cls_train.json"
+      type: "train"
+      skip_if_exists: true
+
+    # 测试集(可选): 带 assistant 标签则用作验证集; 无标签或缺失时自动从训练集切分
+    - cloud_path: "obs://<bucket>/<path>/crash_1cam_2cls_test.json"
+      local_path: "./data/collision_risk_grpo_01/test/crash_1cam_2cls_test.json"
+      type: "test"
+      skip_if_exists: true
+
+    # 视频文件目录 (JSON 中引用的视频路径需在本机可访问)
+    - cloud_path: "obs://<bucket>/<path>/videos/"
+      local_path: "./data/collision_risk_grpo_01/videos/"
+      type: "video"
+      skip_if_exists: true
+
+# ====================== JSON -> verl parquet 转换 ======================
+convert:
+  data_source: collision_risk        # 写入 parquet 的 data_source 字段
+  ability: video_risk_cls
+  # 视频抽帧参数, 透传给 qwen_vl_utils — 与 SFT 完全对齐 (video_fps=8, video_max_pixels=589824):
+  # 3s x fps8 = 24 帧, 时间merge2 -> 12 单元 x (768²/32²=576 token) = 6912 视频 token
+  fps: 8.0
+  max_frames: 24                     # 恰好覆盖 3s x 8fps, 视频保证无更长的
+  max_pixels: 589824                 # 768², 与 SFT 训练分辨率一致
+  # 相对视频路径的根目录 (JSON 内是相对路径时启用)
+  video_root: null
+  # 路径前缀替换: JSON 内是训练机之外的绝对路径时启用, 形式 "src_prefix:dst_prefix"
+  path_map: []
+  #   - "/old/prefix/:./data/collision_risk_grpo_01/videos/"
+  # 转换时校验视频存在, 缺失即报错 (防止 video_root/path_map 配错导致数据集静默缩水)
+  check_video_exists: true
+  # 测试集不可用时从训练集切分验证集的比例(或绝对条数)
+  val_size: 0.05
+
+# ====================== 上传训练结果 ======================
+upload:
+  # TODO: 替换为 checkpoint 上传的 OBS 路径
+  check_point: "obs://<bucket>/<path>/check_point/collision_risk_grpo_01"

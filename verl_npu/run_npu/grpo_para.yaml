@@ -1,0 +1,102 @@
+# GRPO 训练参数 (verl hydra overrides) — 等价于 llm_ft_longtime/train_para.yaml 的角色
+#
+# 说明:
+#   - 每个 key 都是 verl 的 hydra 配置点, launch_grpo.py 会把本文件逐条转成
+#     `key=value` 传给 `python -m verl.trainer.main_ppo`。
+#   - 以 "+" 开头的 key 表示 hydra 新增字段 (原样透传)。
+#   - 下列 __AUTO__ 值由 run.py 在训练前根据实验 config.yaml 自动填充
+#     (模型路径 / 数据路径 / 输出路径 / reward 路径 / 节点数)。
+#   - 参数基线: examples/grpo_trainer/run_qwen3_vl_8b_fsdp.sh (NPU 分支)
+#     + run_qwen3_5_2b_video_fsdp.sh (视频), 按 qwendrive(Qwen3-VL-4B) 与
+#     碰撞风险二分类(无 CoT, 答案为单标签)任务调整。
+
+### ========== 算法: GRPO ==========
+algorithm.adv_estimator: grpo
+algorithm.use_kl_in_reward: false
+
+### ========== 数据 ==========
+# 规模依据 (8节点x8卡=64x910B-64G, qwendrive 2.13B, 视频 3s@fps8=24帧@768²≈6912 token):
+#   128 prompt/步 x n=8 = 1024 序列/步 = 每卡 16 条; rollout 每卡仅需预填 2 个 prompt
+data.train_files: __AUTO__            # run.py 填充: <exp_dir>/data/train.parquet
+data.val_files: __AUTO__              # run.py 填充: <exp_dir>/data/val.parquet
+data.train_batch_size: 128
+data.max_prompt_length: 8192          # 视频 6912 + 文本~550 + 时间戳/模板~150 ≈ 7.6k, 余量~600
+data.max_response_length: 16          # 无 CoT, 仅输出 高风险/安全
+data.filter_overlong_prompts: true
+data.filter_overlong_prompts_workers: 8
+data.truncation: error
+data.image_patch_size: 16             # Qwen3-VL 系列 patch=16
+data.shuffle: true
+# video 列名默认即为 videos, 与 data_convert.py 输出一致, 无需显式设置
+
+### ========== 自定义 reward (高风险/安全 精确匹配) ==========
+reward.custom_reward_function.path: __AUTO__   # run.py 填充: run_npu/rewards/collision_risk.py
+reward.custom_reward_function.name: compute_score
+
+### ========== 模型 (qwendrive, 全参数训练) ==========
+actor_rollout_ref.model.path: __AUTO__         # run.py 填充: 下载后的模型目录
+actor_rollout_ref.model.use_remove_padding: false   # 视频 VL 稳妥取 false (对齐官方视频示例)
+actor_rollout_ref.model.enable_gradient_checkpointing: true
+
+### ========== Actor (FSDP2 全参) ==========
+# 2.13B 参数 64 卡分片: 参数+梯度+Adam ≈ 0.6GB/卡, 训练峰值(激活+分块logits) ~10GB
+# << 61GB 可用 —— 因此关闭 offload 换训练速度
+actor_rollout_ref.actor.strategy: fsdp2
+actor_rollout_ref.actor.optim.lr: 1.0e-6
+actor_rollout_ref.actor.ppo_mini_batch_size: 32           # 每步 128/32=4 次优化器更新
+actor_rollout_ref.actor.use_dynamic_bsz: false
+actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu: 1   # 7.7k token/前向; 稳定后可提 2
+actor_rollout_ref.actor.use_kl_loss: true
+actor_rollout_ref.actor.kl_loss_coef: 0.01
+actor_rollout_ref.actor.kl_loss_type: low_var_kl
+actor_rollout_ref.actor.entropy_coeff: 0
+# --- NPU 相关 ---
+actor_rollout_ref.actor.use_torch_compile: false
+actor_rollout_ref.actor.fsdp_config.param_offload: false
+actor_rollout_ref.actor.fsdp_config.optimizer_offload: false
+actor_rollout_ref.actor.fsdp_config.ulysses_sequence_parallel_size: 1
+actor_rollout_ref.actor.fsdp_config.reshard_after_forward: true
+actor_rollout_ref.actor.fsdp_config.entropy_checkpointing: true
+actor_rollout_ref.actor.entropy_from_logits_with_chunking: true
+
+### ========== Reference 模型 ==========
+actor_rollout_ref.ref.strategy: fsdp2
+actor_rollout_ref.ref.log_prob_use_dynamic_bsz: false
+actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu: 2   # 仅前向, 可比 actor 大
+actor_rollout_ref.ref.fsdp_config.param_offload: false
+actor_rollout_ref.ref.fsdp_config.reshard_after_forward: true
+actor_rollout_ref.ref.fsdp_config.ulysses_sequence_parallel_size: 1
+actor_rollout_ref.ref.use_torch_compile: false
+actor_rollout_ref.ref.entropy_from_logits_with_chunking: true
+
+### ========== Rollout (vllm-ascend) ==========
+actor_rollout_ref.rollout.name: vllm
+# 权重 bf16 仅 4.26GB -> TP=1 单卡整放, 64 个独立引擎, 免 TP 通信
+actor_rollout_ref.rollout.tensor_model_parallel_size: 1
+# util 0.5 -> ~32GB 池: 权重 4.3GB + KV ~25GB (112KB/token, 一个 n=8 组共享
+# prompt KV 仅 ~0.87GB) -> 并发能力远超每卡 2 prompt 的需求
+actor_rollout_ref.rollout.gpu_memory_utilization: 0.5
+actor_rollout_ref.rollout.n: 8                             # GRPO 组大小 (响应仅 2-3 token)
+actor_rollout_ref.rollout.enable_chunked_prefill: false
+# 关闭 chunked prefill 时须 >= max_model_len (8192+16); 视频 prompt 一次性预填
+actor_rollout_ref.rollout.max_num_batched_tokens: 16384
+actor_rollout_ref.rollout.log_prob_use_dynamic_bsz: false
+actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu: 2
+actor_rollout_ref.rollout.free_cache_engine: true
+actor_rollout_ref.rollout.enable_prefix_caching: false
+"+actor_rollout_ref.rollout.engine_kwargs.vllm.mm_processor_cache_gb": 0
+
+### ========== Trainer ==========
+trainer.device: npu
+trainer.n_gpus_per_node: 8
+trainer.nnodes: __AUTO__              # run.py 根据 VC_WORKER_HOSTS 填充
+trainer.project_name: qwendrive_grpo
+trainer.experiment_name: collision_risk_grpo
+trainer.logger: '["console","tensorboard"]'
+trainer.default_local_dir: __AUTO__   # run.py 填充: <exp_dir>/outputs (checkpoint 目录)
+trainer.save_freq: 25
+trainer.test_freq: 25
+trainer.total_epochs: 2
+trainer.val_before_train: false
+trainer.balance_batch: false
+trainer.resume_mode: auto             # 断点续训: outputs 下有 checkpoint 则自动恢复
