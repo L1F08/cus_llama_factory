@@ -86,6 +86,35 @@ bash run.sh experiments/qwendrive/collision_risk_grpo_01/
 临时改参不必改文件: `bash start_grpo_npu.sh` 之后的参数会透传, 或
 `python launch_grpo.py --para grpo_para.yaml --dry_run` 先看最终命令。
 
+## ModelArts 任务依赖字段 (aarch64 / 鲲鹏)
+
+平台提交表单的 `pip_package` / `apt_package` 只能补轻量 Python 依赖;
+**CANN / torch_npu / vLLM / vLLM-Ascend 必须由镜像提供** (vLLM-Ascend 要对着
+CANN 源码编译, CANN 不是 pip 包)。
+
+`pip_package` (空格分隔, 已逐包核验 aarch64 wheel 可用, 无需源码编译):
+
+```
+accelerate bytecode codetiming datasets dill hydra-core numpy<2.0.0 pandas<3 pyarrow>=15.0.0,<=24.0.0 peft>=0.15.2 pybind11 pylatexenc tensordict>=0.8.0,<=0.10.0,!=0.9.0 ray[default] torchdata einops qwen-vl-utils>=0.0.14 av hf_transfer tensorboard mathruler wandb TransferQueue==0.1.8 transformers==5.3.0 xgrammar==0.1.33
+```
+
+`apt_package`:
+
+```
+ffmpeg
+```
+
+aarch64 注意事项:
+
+- **不要安装 `decord`**: PyPI 上 `decord` / `eva-decord` 均无 aarch64 wheel,
+  会退化为源码编译并失败。`qwen-vl-utils>=0.0.14` 默认用 `av` (PyAV) 读视频,
+  aarch64 wheel 齐备, 因此不装 decord 是正常路径。
+- `triton-ascend==3.2.1` 需华为源 (`--extra-index-url
+  https://triton-ascend.osinfra.cn/pypi/simple/`), 平台字段一般不支持自定义源,
+  应由镜像预装 (官方 NPU 镜像自带), 故未列入上表。
+- `moxing` 由 ModelArts 镜像内置, **不可**写入 pip_package (PyPI 同名包不是它)。
+- `pandas<3` 是稳妥起见的上限: pandas 3.0 为破坏性大版本, verl 按 2.x 开发验证。
+
 ## 环境要求 (NPU 机器)
 
 - CANN + torch_npu + vllm-ascend, 按 verl 官方安装脚本:
