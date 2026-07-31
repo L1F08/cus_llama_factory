@@ -171,7 +171,7 @@ def main():
         "data.train_files": train_parquet,
         "data.val_files": val_parquet,
         "trainer.default_local_dir": os.path.abspath(outputs_dir),
-        "reward.custom_reward_function.path": reward_path,
+        "custom_reward_function.path": reward_path,   # verl 7df2afb: 顶层键
         "trainer.nnodes": detect_nnodes(),
     })
     print("===== 3. 训练参数文件处理完成！")

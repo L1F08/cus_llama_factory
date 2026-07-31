@@ -109,7 +109,6 @@ Actor/Rollout/Reference Policy
       path: ~/models/deepseek-llm-7b-chat
       external_lib: null
       override_config:
-        attn_implementation: flash_attention_2  # or eager, sdpa - attention implementation override
         model_config: {}
         moe_config:  # Megatron only, can adjust moe configuration
           freeze_moe_router: False  # Megatron only, can freeze moe router (no grad)
@@ -128,12 +127,13 @@ Actor/Rollout/Reference Policy
       clip_ratio: 0.2
       entropy_coeff: 0.0
       use_kl_loss: False # True for GRPO
-      # Rollout Correction (corrects distribution mismatch between rollout and training)
-      rollout_correction:
-        rollout_is: token # IS weights
-        rollout_is_threshold: 2.0 # TIS upper bound, or "0.5_5.0" for IcePop
-        rollout_rs: null # Rejection sampling
-        rollout_rs_threshold: null # RS upper threshold
+      # Rollout Importance Sampling (corrects distribution mismatch between rollout and training)
+      rollout_is: False # Enable IS correction
+      rollout_is_threshold: null # Upper threshold for IS weights (null to disable)
+      rollout_is_threshold_lower: null # Lower threshold (null = auto 1/upper)
+      rollout_is_level: token # Aggregation: token/sequence/geometric
+      rollout_is_mode: truncate # Bounding: truncate/mask
+      rollout_is_veto_threshold: 1e-4 # Catastrophic outlier threshold
       use_torch_compile: True # False to disable torch compile
       kl_loss_coef: 0.001 # for grpo
       kl_loss_type: low_var_kl # for grpo
@@ -158,11 +158,7 @@ Actor/Rollout/Reference Policy
         fsdp_size: -1
       checkpoint:
         # What to include in saved checkpoints
-        # 'hf_model' saves the full model in HuggingFace format. For Megatron this requires
-        # actor.megatron.use_mbridge=True (the default); 'model' and 'hf_model' then produce
-        # the same HF checkpoint and are deduplicated (saved once). With mbridge disabled,
-        # only the sharded 'model' is supported -- use verl.model_merger after training to
-        # convert it to HF format.
+        # with 'hf_model' you can save whole model as hf format, now only use sharded model checkpoint to save space
         save_contents: ['model', 'optimizer', 'extra']
         # For more flexibility, you can specify the contents to load from the checkpoint.
         load_contents: ${actor_rollout_ref.actor.checkpoint.save_contents}
@@ -230,12 +226,7 @@ Actor/Rollout/Reference Policy
   that need to be imported. Used to register models or tokenizers into
   the Huggingface system.
 - ``actor_rollout_ref.model.override_config``: Used to override some of
-  the model's original configurations. Common overrides include:
-  
-  - ``attn_implementation``: Override the attention implementation. Default is ``flash_attention_2``.
-    Supported values: ``flash_attention_2``, ``eager``, ``sdpa``. Use ``eager`` for debugging or
-    compatibility issues. See :ref:`attention-implementation-override` for detailed usage.
-
+  the model's original configurations, mainly dropout
 - ``actor_rollout_ref.model.enable_gradient_checkpointing``: FSDP only, decide
   Whether to enable gradient checkpointing for the actor,
   Megatron uses recompute options in ``override_transformer_config`` to set this
@@ -246,26 +237,14 @@ Actor/Rollout/Reference Policy
 - ``actor_rollout_ref.model.use_fused_kernels``: Whether to use fused
   kernels in the model. If set to True, the following parameters will be
   used.
-
   - ``actor_rollout_ref.model.fused_kernel_options.impl_backend``: The
-    implementation backend for fused kernels. Options: "triton" or
-    "torch". Default is "torch".
-    While in megatron, we only support "triton" as the
-    implementation backend, so there is no need for this option.
-
+  implementation backend for fused kernels. Options: "triton" or
+  "torch". Default is "torch".
+  While in megatron, we only support "triton" as the
+  implementation backend, so there is no need for this option.
 - ``actor_rollout_ref.model.use_remove_padding``: Whether to use remove
   padding in the model. If set to True, the model will remove padding
   tokens in the input_ids and response_ids. This helps a lot in improving model running efficiency.
-
-- ``actor_rollout_ref.model.tiled_mlp``: TiledMLP configuration for memory-efficient
-  MLP computation. Reduces peak memory by processing MLP forward/backward in tiles.
-  Only compatible with FSDP2 (requires ``actor_rollout_ref.actor.strategy=fsdp2``).
-
-  - ``actor_rollout_ref.model.tiled_mlp.enabled``: Whether to enable TiledMLP.
-    Default is False.
-  - ``actor_rollout_ref.model.tiled_mlp.num_shards``: Number of shards to split
-    the input. Higher values reduce peak memory but may slightly impact performance.
-    Default is 4.
 
 **Actor model**
 
@@ -324,34 +303,15 @@ Actor/Rollout/Reference Policy
 
 - ``actor_rollout_ref.actor.kl_loss_coef``: The coefficient of kl loss. Default is 0.001. 
 
-- ``actor_rollout_ref.actor.kl_loss_type``: Support ``kl`` (``k1``), ``abs``, ``mse`` (``k2``), ``low_var_kl`` (``k3``) and ``full``. Appending ``+`` in the end (e.g., ``k1+`` and ``k3+``) would use straight-through to employ ``k2`` for unbiased gradient estimation, regardless of the kl value estimation (see https://github.com/verl-project/verl/pull/2953#issuecomment-3162113848 for more details). How to calculate the kl divergence between actor and reference policy. For specific options, refer to `kl_penalty()` in `core_algos.py <https://github.com/verl-project/verl/blob/main/verl/trainer/ppo/core_algos.py>`_ . See this blog post for detailed analysis: http://joschu.net/blog/kl-approx.html
+- ``actor_rollout_ref.actor.kl_loss_type``: Support ``kl`` (``k1``), ``abs``, ``mse`` (``k2``), ``low_var_kl`` (``k3``) and ``full``. Appending ``+`` in the end (e.g., ``k1+`` and ``k3+``) would use straight-through to employ ``k2`` for unbiased gradient estimation, regardless of the kl value estimation (see https://github.com/volcengine/verl/pull/2953#issuecomment-3162113848 for more details). How to calculate the kl divergence between actor and reference policy. For specific options, refer to `kl_penalty()` in `core_algos.py <https://github.com/volcengine/verl/blob/main/verl/trainer/ppo/core_algos.py>`_ . See this blog post for detailed analysis: http://joschu.net/blog/kl-approx.html
 
 - ``actor_rollout_ref.actor.checkpoint``: The configurations of checkpoint function in actor
 
-  - ``save_contents``: The contents to save in the checkpoint. Accepts any subset of
-    ``model``, ``optimizer``, ``extra`` and ``hf_model``. Default is
-    ``['model', 'optimizer', 'extra']``. The extra information includes RNG states (and the
-    LR scheduler for FSDP, the ``opt_param_scheduler`` for Megatron).
-    For Megatron, the meaning of ``model`` depends on the active backend
-    (``actor.megatron.use_mbridge``):
-
-    - With ``use_mbridge=True`` (default): both ``model`` and ``hf_model`` save the full model
-      in HuggingFace format under ``${ckpt_path}/model/huggingface/`` via mbridge; if both are
-      listed, the model is saved once (deduplicated).
-    - With ``use_mbridge=False``: ``model`` saves Megatron sharded weights via
-      ``dist_checkpointing`` under ``${ckpt_path}/model/dist_ckpt/``; ``hf_model`` is **not**
-      supported in this mode -- use ``python -m verl.model_merger merge --backend megatron``
-      to convert sharded checkpoints to HF format after training.
-
-    For FSDP, ``hf_model`` saves the full HF model on rank 0 in addition to the sharded
-    ``model`` shards.
+  - ``save_contents``: The contents to save in the checkpoint. By default, we save model, optimizer and extra information in the checkpoint.
+    The extra information includes Rng states currently, FSDP supported lr_scheduler, and Megatron opt_param_scheduler will coming soon.
+    We do not store hf_model in checkpoint by default, but we provide a tool in ``scripts/model_merge.py`` to convert checkpoint format to hf format.
 
   - ``load_contents``: The contents to load in the checkpoint, you can specify different checkpoint loading contents. By default, it is the same with ``save_checkpoint``.
-
-  - ``save_lora_only`` (bool, default ``False``): When ``True`` and the model has LoRA adapters,
-    only LoRA/adapter weights are saved instead of the full model state dict. On load, LoRA-only
-    checkpoints are auto-detected and merged into the base model via ``strict=False``.
-    Reduces checkpoint size dramatically (e.g. ~150 MiB vs ~54 GiB for a 27B model).
 
 **Reference Model**
 
@@ -553,12 +513,13 @@ Algorithm
        kl_coef: 0.005
        horizon: 10000
        target_kl: 0.1
-     # Rollout Correction
-     rollout_correction:
-       rollout_is: null  # IS weights
-       rollout_is_threshold: 2.0  # Upper threshold for IS weights
-       rollout_rs: null  # Rejection sampling
-       rollout_rs_threshold: null  # RS upper threshold
+     # Rollout Importance Sampling
+     rollout_is: False
+     rollout_is_threshold: null
+     rollout_is_threshold_lower: null
+     rollout_is_level: token
+     rollout_is_mode: truncate
+     rollout_is_veto_threshold: 1e-4
 
 - ``gamma``: discount factor
 - ``lam``: Trade-off between bias and variance in the GAE estimator
@@ -566,22 +527,18 @@ Algorithm
 - ``use_kl_in_reward``: Whether to enable in-reward kl penalty. Default is False.
 - ``kl_penalty``: Support ``kl``, ``abs``, ``mse``, ``low_var_kl`` and ``full``. How to
   calculate the kl divergence between actor and reference policy. For
-  specific options, refer to `kl_penalty()` in `core_algos.py <https://github.com/verl-project/verl/blob/main/verl/trainer/ppo/core_algos.py>`_ .
+  specific options, refer to `kl_penalty()` in `core_algos.py <https://github.com/volcengine/verl/blob/main/verl/trainer/ppo/core_algos.py>`_ .
 - ``kl_ctrl``: Config for in-reward kl_penalty controller
-
   - ``kl_coef``: The (initial) coefficient of in-reward kl_penalty. Default is 0.001.
   - ``type``: 'fixed' for FixedKLController and 'adaptive' for AdaptiveKLController.
   - ``horizon`` and ``target_kl``: See source code of AdaptiveKLController for details.
-
-- ``rollout_correction``: Rollout Correction configuration (nested dict). Set to ``null`` to disable.
-  When enabled, contains:
-
-  - ``rollout_is``: IS weights aggregation level, ``null`` to disable IS weights.
-  - ``rollout_is_threshold``: Upper threshold for IS weights (e.g., 2.0).
-  - ``rollout_rs``: Rejection sampling mode, ``null`` to disable RS.
-  - ``rollout_rs_threshold``: RS upper threshold.
-
-  Note: Rollout Correction requires setting ``actor_rollout_ref.rollout.calculate_log_probs=True``.
+- ``rollout_is``: Whether to enable rollout importance sampling correction. Default is False.
+- ``rollout_is_threshold``: Upper threshold for IS weights. Set to ``null`` to disable IS completely.
+- ``rollout_is_threshold_lower``: Lower threshold for IS weights. If ``null``, defaults to reciprocal of upper (1/upper).
+- ``rollout_is_level``: Aggregation level: ``token`` (biased), ``sequence`` (unbiased), or ``geometric`` (experimental).
+- ``rollout_is_mode``: Bounding mode: ``truncate`` (cap upper only) or ``mask`` (zero outside bounds).
+- ``rollout_is_veto_threshold``: Per-token veto threshold for catastrophic outliers. Default is 1e-4.
+  Note: Rollout IS requires setting ``actor_rollout_ref.rollout.calculate_log_probs=True``.
 
 Trainer
 ~~~~~~~
@@ -611,7 +568,7 @@ Trainer
 - ``trainer.total_epochs``: Number of epochs in training.
 - ``trainer.project_name``: For wandb, swanlab, mlflow
 - ``trainer.experiment_name``: For wandb, swanlab, mlflow
-- ``trainer.logger``: Support console, wandb, swanlab, mlflow, tensorboard, trackio, and rl_insight.
+- ``trainer.logger``: Support console and wandb, swanlab, mlflow, tensorboard, trackio
 - ``trainer.log_val_generations``: The number of logged generation during validation (default ``0``)
 - ``trainer.nnodes``: Number of nodes used in the training.
 - ``trainer.n_gpus_per_node``: Number of GPUs per node.

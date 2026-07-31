@@ -95,6 +95,8 @@ def main():
         "verl/utils/reward_score/__init__.py",
         "verl/trainer/ppo/core_algos.py",
         "verl/experimental/agent_loop/agent_loop.py",
+        "verl/workers/sharding_manager/fsdp_vllm.py",
+        "verl/workers/sharding_manager/fsdp_ulysses.py",
     ]
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -123,7 +125,7 @@ def main():
         if missing:
             print(f"  Found {len(missing)} missing docstrings")
         else:
-            print("  All functions and classes have docstrings [OK]")
+            print("  All functions and classes have docstrings ✓")
 
     print("=" * 60)
 
@@ -147,7 +149,7 @@ def main():
         raise Exception(f"Found {len(all_missing_docstrings)} functions/classes without proper docstrings!")
 
     else:
-        print("\n[OK] All functions and classes have proper docstrings!")
+        print("\n✅ All functions and classes have proper docstrings!")
 
 
 if __name__ == "__main__":

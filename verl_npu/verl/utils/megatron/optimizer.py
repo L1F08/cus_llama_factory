@@ -19,74 +19,20 @@ from megatron.core.optimizer import get_megatron_optimizer as get_megatron_optim
 from megatron.core.optimizer_param_scheduler import OptimizerParamScheduler
 
 from verl.utils.logger import print_rank_0
-from verl.utils.torch_dtypes import PrecisionType
 
 
-def init_megatron_optim_config(
-    optim_config: dict,
-    use_distributed_optimizer: bool = True,
-    fp16: bool = False,
-    bf16: bool = True,
-) -> OptimizerConfig:
+def init_megatron_optim_config(optim_config: dict) -> OptimizerConfig:
     optim_args = {
         "optimizer": optim_config.optimizer,
         "lr": optim_config.lr,
         "min_lr": optim_config.min_lr,
         "clip_grad": optim_config.clip_grad,
         "weight_decay": optim_config.weight_decay,
-        "use_distributed_optimizer": use_distributed_optimizer,
+        "bf16": True,
+        "params_dtype": torch.bfloat16,
+        "use_distributed_optimizer": True,
     }
-    if fp16:
-        optim_args.update(
-            {
-                "bf16": False,
-                "fp16": True,
-                "params_dtype": torch.float16,
-                "initial_loss_scale": 32768,
-                "min_loss_scale": 1,
-                "use_precision_aware_optimizer": True,
-                "store_param_remainders": False,
-            }
-        )
-    elif bf16:
-        optim_args.update(
-            {
-                "bf16": True,
-                "params_dtype": torch.bfloat16,
-            }
-        )
-        # Precision-aware optimizer is opt-in (default keeps the grad-accumulation
-        # buffer and Adam moments (m, v) at Megatron's fp32 default, preserving
-        # prior numerics). When enabled via config, those buffers follow the
-        # configured dtypes so optimizer-state memory can track the model dtype.
-        # Master parameters stay fp32 (Megatron default `main_params_dtype`)
-        # because TE FusedAdam currently rejects bf16 master weights at init
-        # (only fp32/fp16 accepted); the int16 `store_param_remainders` path
-        # already trims the fp32 master buffer in bf16 mode. Requires
-        # TransformerEngine's FusedAdam. The DDP grad-bucket dtype is kept
-        # consistent with `main_grads_dtype` by the engine at model-build time.
-        if optim_config.get("use_precision_aware_optimizer", False):
-            optim_args.update(
-                {
-                    "use_precision_aware_optimizer": True,
-                    "main_grads_dtype": PrecisionType.to_dtype(optim_config.get("main_grads_dtype", "fp32")),
-                    "exp_avg_dtype": PrecisionType.to_dtype(optim_config.get("exp_avg_dtype", "fp32")),
-                    "exp_avg_sq_dtype": PrecisionType.to_dtype(optim_config.get("exp_avg_sq_dtype", "fp32")),
-                }
-            )
-    else:
-        # fp32 mode: leave grad-accumulation buffer and Adam moments at
-        # Megatron's default torch.float32. Do not enable the precision-aware
-        # optimizer — it's only beneficial when a moment/grad dtype is below
-        # fp32, and Megatron asserts the dtype fields equal fp32 whenever the
-        # precision-aware optimizer is off (optimizer_config.py:258-268).
-        optim_args.update(
-            {
-                "bf16": False,
-                "fp16": False,
-                "params_dtype": torch.float32,
-            }
-        )
+
     override_config = optim_config.get("override_optimizer_config", {})
     if override_config:
         for k, v in override_config.items():
@@ -101,11 +47,17 @@ def init_megatron_optim_config(
 def get_megatron_optimizer(
     model,
     config: OptimizerConfig,
+    no_weight_decay_cond=None,
+    scale_lr_cond=None,
+    lr_mult=1.0,
 ):
     # Base optimizer.
     return get_megatron_optimizer_native(
         config=config,
         model_chunks=model,
+        no_weight_decay_cond=no_weight_decay_cond,
+        scale_lr_cond=scale_lr_cond,
+        lr_mult=lr_mult,
     )
 
 

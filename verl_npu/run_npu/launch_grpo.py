@@ -40,20 +40,14 @@ def build_overrides(para_path):
 
 
 def check_qwen_vl_utils():
-    """verl 的视频数据通路依赖较新的 qwen_vl_utils kwargs; 版本过旧时数据集
-    会被静默过滤为空 (异常被吞), 故启动前显式探测函数签名并快速失败。"""
-    from inspect import signature
+    """verl 7df2afb 的视频通路只用 qwen_vl_utils.fetch_video/fetch_image
+    (公司内网组合 pin qwen-vl-utils==0.0.11)。启动前确认可导入, 缺失时
+    快速失败 —— 否则数据集侧异常会被吞掉, 表现为样本被静默丢弃。"""
     try:
-        from qwen_vl_utils import process_vision_info
+        from qwen_vl_utils import fetch_image, fetch_video  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
-            f"缺少 qwen_vl_utils ({e}); 请 pip install 'qwen-vl-utils>=0.0.14'") from e
-    missing = ({"image_patch_size", "return_video_metadata"}
-               - set(signature(process_vision_info).parameters))
-    if missing:
-        raise RuntimeError(
-            f"qwen_vl_utils 版本过旧, process_vision_info 缺少参数 {missing}; "
-            f"请升级: pip install -U 'qwen-vl-utils>=0.0.14'")
+            f"缺少 qwen_vl_utils ({e}); 请 pip install qwen-vl-utils==0.0.11") from e
 
 
 def main():

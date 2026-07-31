@@ -8,35 +8,14 @@ Applicable Scenarios
 
 Agentic RL involves multiple turns of conversations, tool invocations, and user interactions during the rollout process. During the Model Training process, it is necessary to track function calls, inputs, and outputs to understand the flow path of data within the application. The Trace feature helps, in complex multi-round conversations, to view the transformation of data during each interaction and the entire process leading to the final output by recording the inputs, outputs, and corresponding timestamps of functions, which is conducive to understanding the details of how the model processes data and optimizing the training results.
 
-The Trace feature integrates commonly used Agent trace tools, including wandb weave, mlflow, and Trackio, which are already supported. Users can choose the appropriate trace tool according to their own needs and preferences. Here, we introduce the usage of each tool.
+The Trace feature integrates commonly used Agent trace tools, including wandb weave and mlflow, which are already supported. Users can choose the appropriate trace tool according to their own needs and preferences. Here, we introduce the usage of each tool.
 
 
 Trace Parameter Configuration
 -----------------------------
 
-- ``actor_rollout_ref.rollout.trace.backend=mlflow|weave|trackio`` # the trace backend type
+- ``actor_rollout_ref.rollout.trace.backend=mlflow|weave`` # the trace backend type
 - ``actor_rollout_ref.rollout.trace.token2text=True`` # To show decoded text in trace view
-- ``actor_rollout_ref.rollout.trace.max_samples_per_step_per_worker=N`` # Limit traces per worker (optional)
-
-Limiting Trace Volume
-~~~~~~~~~~~~~~~~~~~~~~
-
-By default, all samples are traced, which can generate large amounts of data and incur significant costs with trace backends like Weave or MLflow. To limit trace volume while maintaining representative coverage, use ``max_samples_per_step_per_worker``.
-
-Example configuration:
-
-.. code-block:: yaml
-
-   actor_rollout_ref:
-     rollout:
-       trace:
-         backend: weave
-         token2text: False
-         max_samples_per_step_per_worker: 5  # Each worker traces 5 random samples
-
-Each agent loop worker independently selects up to N unique samples to trace per training step. For GRPO (``n > 1``), all rollouts for selected samples are traced. Total traces per step = max_samples_per_step_per_worker * num_workers * n.
-
-Example: With 4 workers, max_samples_per_step_per_worker=5, and GRPO n=4, you get 4 * 5 * 4 = 80 traces per step instead of tracing all samples. Set to null (default) to trace all samples.
 
 
 Glossary
@@ -144,26 +123,3 @@ Note:
 
 1. mlflow does not support comparing multiple traces
 2. rollout_trace can not associate the mlflow trace with the run, so the trace content cannot be seen in the mlflow run logs.
-
-
-Usage of Trackio
-----------------
-
-1. Basic Configuration
-~~~~~~~~~~~~~~~~~~~~~~
-
-1. Configuration Parameters
-
-   1. ``actor_rollout_ref.rollout.trace.backend=trackio``
-   2. ``trainer.logger=['console', 'trackio']``. This item is optional for rollout traces, but recommended so metrics, validation generations, and traces are available in one Trackio run.
-   3. ``trainer.project_name=$project_name``
-   4. ``trainer.experiment_name=$experiment_name``
-
-2. View Log
-~~~~~~~~~~~
-
-After executing training, open the Trackio dashboard and select the configured project and experiment. Rollout trace operations are logged as Trackio traces with ``step``, ``sample_index``, ``rollout_n``, ``validate``, and ``experiment_name`` metadata. Validation generations are also logged as Trackio traces when ``trackio`` is enabled in ``trainer.logger``. Click on any Trace to expand it:
-
-.. image:: https://huggingface.co/buckets/trackio/doc-images/resolve/traces-verl.png
-
-

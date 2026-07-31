@@ -1,8 +1,14 @@
-# run_npu — verl GRPO 训练编排层 (Ascend NPU)
+# run_npu — verl GRPO 训练编排层 (Ascend NPU, CANN 8.3.RC2 受限环境)
 
-本目录是绕 verl (v0.9.0.dev, 官方已内置 Ascend NPU 支持) 搭建的训练编排层,
-文件读入方式与训练启动方式与 `llm_ft_longtime` (LlamaFactory SFT 框架) **完全同构**,
-可直接沿用相同的 ModelArts 提交习惯。
+本目录是绕 verl 搭建的训练编排层, 文件读入方式与训练启动方式与
+`llm_ft_longtime` (LlamaFactory SFT 框架) **完全同构**, 可直接沿用相同的
+ModelArts 提交习惯。
+
+**版本基线** (受公司内网 CANN 8.3.RC2 约束, 采用内部已验证组合):
+verl **7df2afb** (v0.7.0.dev, 本仓库已 vendor 并打 PR#4030 补丁) + vllm 0.11.0
++ vllm-ascend 0.11.0rc3 + torch/torch_npu 2.7.1 + qwen-vl-utils 0.0.11
++ MindSpeed-MM v2.3.0 verl_plugin (Qwen3vl)。完整矩阵见根目录 `UPSTREAM.md`,
+环境安装见本目录 `setup_env_ma.sh`。
 
 ## 与 llm_ft_longtime 的文件对应关系
 
@@ -64,15 +70,17 @@ bash run.sh experiments/qwendrive/collision_risk_grpo_01/
 ## 奖励函数
 
 `rewards/collision_risk.py::compute_score` — 无 CoT 约束下的规则奖励:
-取输出中最后出现的合法标签作预测, 与 ground truth 精确匹配得 1 分, 否则 0 分;
-另记录 `format`(输出是否恰为标签本身) 与 `pred` 供 tensorboard 分析。
+剥掉首尾空白/标点后**严格精确匹配** 高风险/安全 (避免"不安全"等否定表述
+因子串匹配骗分), 匹配 ground truth 得 1 分, 否则 0 分; 另记录 `format` 与
+`pred` — 此 verl 版本会自动用字符串 `pred` 产出 maj@N 多数投票指标。
 
 ## 超参调整
 
 直接编辑 `grpo_para.yaml` (每行都是 verl 的 hydra 配置点, 等价于命令行
-`key=value`)。基线取自 verl 官方 `examples/grpo_trainer/run_qwen3_vl_8b_fsdp.sh`
-(NPU 分支) 与 `run_qwen3_5_2b_video_fsdp.sh` (视频), 按 qwendrive(Qwen3-VL-4B)
-与二分类短答任务调整:
+`key=value`)。基线取自 MindSpeed-MM
+`examples/verl_examples/qwen3vl/train_qwen3_vl_8b_grpo_full.sh`
+(内部已验证的 NPU Qwen3-VL GRPO 配置), 按 qwendrive(Qwen3-VL-2B, 2.13B)
+与二分类短答视频任务调整:
 
 - `actor_rollout_ref.rollout.n=8` — GRPO 组大小; 响应仅数 token, 组可取大
 - `data.max_response_length=16` — 无 CoT, 只输出标签
@@ -80,48 +88,56 @@ bash run.sh experiments/qwendrive/collision_risk_grpo_01/
 - `trainer.resume_mode=auto` — 断点续训: 任务重启后 `run.py` 先从 OBS 恢复
   最近完整 checkpoint 到 outputs/, verl 再自动续训 (上传进程会维护远端
   `latest_checkpointed_iteration.txt` 只指向已完整上传的 step)
+- `data.filter_overlong_prompts=false` — **勿开启**: 此 verl 版本开启后会把
+  每个视频完整解码两遍, 且解码失败的样本被静默丢弃; 视频统一 3s 长度确定,
+  转换期已做存在性校验, 无需此过滤
 - 显存吃紧时: 降 `convert.max_pixels`/`max_frames`, 或升
   `actor_rollout_ref.rollout.tensor_model_parallel_size`
 
 临时改参不必改文件: `bash start_grpo_npu.sh` 之后的参数会透传, 或
 `python launch_grpo.py --para grpo_para.yaml --dry_run` 先看最终命令。
 
-## ModelArts 任务依赖字段 (aarch64 / 鲲鹏)
+## 环境安装 (CANN 8.3.RC2 受限环境)
 
-平台提交表单的 `pip_package` / `apt_package` 只能补轻量 Python 依赖;
-**CANN / torch_npu / vLLM / vLLM-Ascend 必须由镜像提供** (vLLM-Ascend 要对着
-CANN 源码编译, CANN 不是 pip 包)。
+**镜像基线**: CANN 8.3.RC2 + Python 3.11 + torch 2.7.1 + torch_npu 2.7.1
+(内部分享镜像: https://ai.gitcode.com/Ascend-SACT/Qwen3-VL-30B-A3B-Instruct-GRPO)。
 
-`pip_package` (空格分隔, 已逐包核验 aarch64 wheel 可用, 无需源码编译):
+**训练环境**: vllm / vllm-ascend / transformers / MindSpeed-MM verl_plugin
+均需**源码安装** (无法通过平台 pip_package 字段解决), 执行:
 
-```
-accelerate bytecode codetiming datasets dill hydra-core numpy<2.0.0 pandas<3 pyarrow>=15.0.0,<=24.0.0 peft>=0.15.2 pybind11 pylatexenc tensordict>=0.8.0,<=0.10.0,!=0.9.0 ray[default] torchdata einops qwen-vl-utils>=0.0.14 av hf_transfer tensorboard mathruler wandb TransferQueue==0.1.8 transformers==5.3.0 xgrammar==0.1.33
-```
-
-`apt_package`:
-
-```
-ffmpeg
+```bash
+bash setup_env_ma.sh /path/to/code_dir
 ```
 
-aarch64 注意事项:
+脚本固化了内部验证过的完整流程: 内网 pip 源与超时配置 → torch/torch_npu 2.7.1
+→ vllm v0.11.0 (VLLM_TARGET_DEVICE=empty) → vllm-ascend v0.11.0rc3 (源码编译
+自定义算子; 商发 torch_npu 2.7.1.dev20250724) → 本仓库 vendored verl (7df2afb,
+已含 PR#4030 timing 补丁) → transformers@7a833d1 → qwen-vl-utils==0.0.11 等
+三方库 → 重装 torch 防覆盖 → MindSpeed-MM v2.3.0 verl_plugin
+(MODEL_SELECT=Qwen3vl, 对 verl 打 Qwen3-VL NPU 适配补丁)。
 
-- **不要安装 `decord`**: PyPI 上 `decord` / `eva-decord` 均无 aarch64 wheel,
-  会退化为源码编译并失败。`qwen-vl-utils>=0.0.14` 默认用 `av` (PyAV) 读视频,
-  aarch64 wheel 齐备, 因此不装 decord 是正常路径。
-- `triton-ascend==3.2.1` 需华为源 (`--extra-index-url
-  https://triton-ascend.osinfra.cn/pypi/simple/`), 平台字段一般不支持自定义源,
-  应由镜像预装 (官方 NPU 镜像自带), 故未列入上表。
-- `moxing` 由 ModelArts 镜像内置, **不可**写入 pip_package (PyPI 同名包不是它)。
-- `pandas<3` 是稳妥起见的上限: pandas 3.0 为破坏性大版本, verl 按 2.x 开发验证。
+建议先在交互环境跑通 `setup_env_ma.sh` 后**制作镜像**, 任务提交时不再现装;
+平台 `pip_package` 字段此时只需兜底轻量纯 Python 包 (镜像里已装则留空):
 
-## 环境要求 (NPU 机器)
+```
+qwen-vl-utils==0.0.11 mathruler viztracer uvloop==0.21.0 setuptools==80.9.0 cloudpickle==3.1.2 tensorboard
+```
 
-- CANN + torch_npu + vllm-ascend, 按 verl 官方安装脚本:
-  `bash <verl根>/scripts/install_vllm_mcore_npu.sh` (FSDP 路线可
-  `USE_MEGATRON=0`), 版本矩阵见 `docs/ascend_tutorial/get_start/install_guidance.rst`
-- `pip install -r <verl根>/requirements-npu.txt && pip install -e <verl根>`
-- conda 环境名默认 `verl_npu` (可用环境变量 `CONDA_ENV` 覆盖)
+`apt_package`: `ffmpeg` (视频解码兜底)。
+
+aarch64 注意: **不要安装 `decord`** (PyPI 无 aarch64 wheel, 会源码编译失败);
+`moxing` 由 ModelArts 镜像内置, 不可写入 pip_package。
+
+## 已知问题与修复 (来自内部迁移经验)
+
+- `DataProto.concat` 报 `Conflicting values for meta_info key 'timing'`
+  (verl PR#4030) — 本仓库 vendored verl 已打补丁。
+- vllm-ascend MOE 需 >= v0.11.0rc2; `VLLM_ASCEND_ENABLE_FLASHCOMM1=1` 报错
+  需升 v0.11.0rc3 (vllm-ascend issue #4535)。
+- vllm-ascend 的 requirements.txt 会把 torch 覆盖成 2.8.x — 装完须重装
+  torch==2.7.1 (setup_env_ma.sh 已处理)。
+- 环境里如已装过 verl / mindspeed-mm, 必须先卸载再装, 否则有兼容性问题。
+- conda 环境名默认 `verl_npu` (可用环境变量 `CONDA_ENV` 覆盖)。
 
 ## 本地(无 NPU / 无 moxing)调试
 

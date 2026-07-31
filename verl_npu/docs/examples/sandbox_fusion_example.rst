@@ -1,7 +1,7 @@
 Sandbox Fusion Example
 ============================
 
-Last updated: 05/17/2026.
+Last updated: 06/27/2025.
 
 Introduction
 ------------
@@ -45,8 +45,10 @@ To further reduce code verification time, enable parallel processing with:
 
 - ``reward_model.reward_manager=prime``: The Prime reward manager verifies code across multiple subprocesses concurrently.
 
-**Example Notebook**
+**Example Script**
 
-For a practical implementation, refer to the example notebook:  
+For a practical implementation, refer to the example script:  
 
-``examples/tutorial/agent_loop_get_started/agent_loop_tutorial.ipynb``
+``examples/ppo_trainer/run_deepseek7b_llm_sandbox_fusion.sh``
+
+Once you’ve set your API endpoint in the script, you can start the training job.

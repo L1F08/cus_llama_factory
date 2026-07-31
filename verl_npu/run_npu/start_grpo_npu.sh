@@ -33,22 +33,33 @@ fi
 RAY_PORT=${RAY_PORT:-6766}
 echo "拓扑: NNODES=$NNODES NODE_RANK=$NODE_RANK MASTER_ADDR=$MASTER_ADDR"
 
-# ---------- Ascend 环境 ----------
+# ---------- Ascend 环境 (CANN 8.3.RC2 + vllm-ascend 0.11.0rc3 组合) ----------
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 source /usr/local/Ascend/nnal/atb/set_env.sh
 
-export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+# 对齐 MindSpeed-MM verl_plugin qwen3vl 示例 (ray_start.sh) 的环境变量
+export VLLM_USE_V1=1
+export USE_OPTIMIZED_MODEL=0          # RLHF 场景禁用 vllm-ascend 优化模型
+export VLLM_ASCEND_ENABLE_NZ=0
+export HCCL_BUFFSIZE=300
+export TASK_QUEUE_ENABLE=1
+export COMBINED_ENABLE=1
+export PYTORCH_NPU_ALLOC_CONF="garbage_collection_threshold:0.85"
+export MULTI_STREAM_MEMORY_REUSE=1
+export TOKENIZERS_PARALLELISM=false
+export HYDRA_FULL_ERROR=1
+export RAY_DEDUP_LOGS=0
+ulimit -n 32768 2>/dev/null || true
+
 export ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
-# verl/Ray 在 NPU 上的必需项: 防止 Ray 覆盖 ASCEND_RT_VISIBLE_DEVICES
+# 防止 Ray 覆盖 ASCEND_RT_VISIBLE_DEVICES (verl ray_utils 识别此变量)
 export RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES=1
 
-# HCCL (沿用 SFT 脚本的超时设置 + verl 官方 NPU 示例的端口区间)
+# HCCL 超时 (沿用 SFT 脚本的长超时, 覆盖节点间下载/转换进度差)
 export HCCL_WHITELIST_DISABLE=1
 export HCCL_CONNECT_TIMEOUT=7200
 export HCCL_EXEC_TIMEOUT=10800
 export ACL_DEVICE_SYNC_TIMEOUT=10800
-export HCCL_HOST_SOCKET_PORT_RANGE=60000-60050
-export HCCL_NPU_SOCKET_PORT_RANGE=61000-61050
 
 # tensorboard 输出目录 (trainer.logger 含 tensorboard 时生效)
 export TENSORBOARD_DIR="$LOG_DIR/tensorboard"
@@ -57,8 +68,14 @@ mkdir -p "$TENSORBOARD_DIR"
 cd "$VERL_ROOT"
 
 # ---------- 启动 ----------
+# 多节点时 verl 需连接已有 ray 集群: 此 verl 版本 ray_init 无 address 键,
+# 通过 hydra 追加 +ray_kwargs.ray_init.address=auto 接入 (单节点自起本地 ray)
 launch_train() {
-    python3 "$PROJECT_ROOT/launch_grpo.py" --para "$GRPO_PARA" \
+    local extra=()
+    if [ "$NNODES" -gt 1 ]; then
+        extra+=("+ray_kwargs.ray_init.address=auto")
+    fi
+    python3 "$PROJECT_ROOT/launch_grpo.py" --para "$GRPO_PARA" "${extra[@]}" \
         2>&1 | tee -a "$LOG_DIR/full_train.log"
 }
 

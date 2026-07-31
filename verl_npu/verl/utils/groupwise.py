@@ -46,7 +46,7 @@ from typing import Any, Optional
 import numpy as np
 import torch
 
-from verl.utils.device import get_device_name
+from verl.utils.device import get_torch_device
 
 __all__ = ["as_torch_index", "group_mean_std"]
 
@@ -71,7 +71,7 @@ def _resolve_device(explicit: Optional[torch.device | str]) -> torch.device:
     if "PYTEST_CURRENT_TEST" in os.environ:
         return torch.device("cpu")
 
-    return torch.device(get_device_name())
+    return get_torch_device()
 
 
 def _to_1d_numpy_object_array(x: Any) -> np.ndarray:
@@ -204,9 +204,10 @@ def group_mean_std(
 
     count = torch.zeros(G, device=target, dtype=torch.float32).index_add_(0, gidx, ones)
     s1 = torch.zeros(G, device=target, dtype=torch.float32).index_add_(0, gidx, scores)
+    s2 = torch.zeros(G, device=target, dtype=torch.float32).index_add_(0, gidx, scores * scores)
+
     mean = s1 / count.clamp_min(1.0)
-    centered = scores - mean[gidx]
-    var_num = torch.zeros(G, device=target, dtype=torch.float32).index_add_(0, gidx, centered * centered)
+    var_num = s2 - (s1 * s1) / count.clamp_min(1.0)
     denom = (count - 1.0).clamp_min(1.0)
     var = var_num / denom
     std = torch.sqrt(torch.clamp(var, min=eps))

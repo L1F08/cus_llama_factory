@@ -20,7 +20,6 @@ import torch
 from torch.distributed.device_mesh import DeviceMesh
 
 from verl import DataProto
-from verl.utils.config import omega_conf_to_dataclass
 from verl.workers.config import HFModelConfig, RolloutConfig
 
 __all__ = ["BaseRollout"]
@@ -34,11 +33,9 @@ class BaseRollout(ABC):
         config: RolloutConfig,
         model_config: HFModelConfig,
         device_mesh: DeviceMesh,
-        *args,
-        **kwargs,
     ):
-        self.config = omega_conf_to_dataclass(config)
-        self.model_config: HFModelConfig = omega_conf_to_dataclass(model_config)
+        self.config = config
+        self.model_config = model_config
         self.device_mesh = device_mesh
 
     @abstractmethod
@@ -54,17 +51,12 @@ class BaseRollout(ABC):
     async def update_weights(
         self,
         weights: Generator[tuple[str, torch.Tensor], None, None],
-        wire_format: str = "named_tensors",
         **kwargs,
     ):
         """Update the weights of the rollout model.
 
         Args:
             weights: A generator that yields the name of the weight tensor and the tensor itself.
-            wire_format: How the generator packages weights -- "named_tensors" (full
-                tensors, the default) or "delta_flush" (per-flush sparse payloads from
-                the delta checkpoint engine; sglang only). Implementations must consume
-                this explicitly and never forward it to engine-specific extensions.
         """
         pass
 
@@ -86,18 +78,19 @@ class BaseRollout(ABC):
 
 
 _ROLLOUT_REGISTRY = {
-    ("vllm", "async"): "verl.workers.rollout.vllm_rollout.ServerAdapter",
+    ("vllm", "sync"): "verl.workers.rollout.vllm_rollout.vLLMRollout",
+    ("vllm", "async"): "verl.workers.rollout.vllm_rollout.vLLMAsyncRollout",
+    ("sglang", "sync"): "verl.workers.rollout.sglang_rollout.sglang_rollout.SGLangRollout",
     ("sglang", "async"): "verl.workers.rollout.sglang_rollout.sglang_rollout.ServerAdapter",
-    ("trtllm", "async"): "verl.workers.rollout.trtllm_rollout.trtllm_rollout.ServerAdapter",
 }
 
 
-def get_rollout_class(rollout_name: str, mode: str = "async") -> type[BaseRollout]:
+def get_rollout_class(rollout_name: str, mode: str) -> type[BaseRollout]:
     """Get the rollout class by name.
 
     Args:
         rollout_name: The name of the rollout.
-        mode: The mode of the rollout, async: server mode.
+        mode: The mode of the rollout, sync: spmd mode, async: server mode.
 
     Returns:
         The rollout class.
